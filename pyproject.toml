@@ -1,0 +1,35 @@
+[project]
+name = "spec2test"
+version = "0.0.1"
+description = "Turn requirements documents into verification items: checklists, test cases and evidence items."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.17.0",
+    "pydantic>=2.14.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "live: calls a real LLM API; runs only when SPEC2TEST_LIVE=1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.15.1",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]

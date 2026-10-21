@@ -1,0 +1,29 @@
+[
+  {
+    "name": "test-case-rear-image",
+    "schema": "VerificationItem",
+    "prompt_contains": ["REQ-001"],
+    "response": {
+      "id": "VI-001",
+      "requirement_ids": ["REQ-001"],
+      "kind": "test_case",
+      "fields": {
+        "preconditions": ["Vehicle powered on, transmission in park"],
+        "steps": ["Select reverse", "Measure time until the rear image is displayed"],
+        "expected_result": "Rear image displayed",
+        "pass_criterion": "Display time <= 2.0 s",
+        "equipment": ["High-speed camera or timing tool"]
+      }
+    }
+  },
+  {
+    "name": "checklist-fallback",
+    "schema": "VerificationItem",
+    "response": {
+      "id": "VI-999",
+      "requirement_ids": ["REQ-999"],
+      "kind": "checklist",
+      "fields": {"inspect": "Label on the enclosure", "pass_condition": "Label present"}
+    }
+  }
+]

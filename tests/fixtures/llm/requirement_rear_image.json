@@ -1,0 +1,30 @@
+{
+  "name": "requirement-rear-image",
+  "schema": "Requirement",
+  "prompt_contains": ["selecting reverse"],
+  "response": {
+    "id": "REQ-001",
+    "source_anchor": {
+      "doc": "example-spec",
+      "page": 1,
+      "section": "5.1",
+      "start": 0,
+      "end": 85,
+      "quote": "The rear image shall be displayed within 2.0 seconds of the driver selecting reverse."
+    },
+    "text": "The rear image shall be displayed within 2.0 seconds of the driver selecting reverse.",
+    "type": "performance",
+    "strength": "shall",
+    "criteria": [
+      {
+        "parameter": "rear image display time",
+        "comparator": "le",
+        "value": "2.0",
+        "unit": "s"
+      }
+    ],
+    "conditions": ["driver selects reverse"],
+    "verification_method": "test",
+    "testability_flags": []
+  }
+}
