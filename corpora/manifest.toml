@@ -1,0 +1,48 @@
+# Gold-set source documents (docs/PLAN.md, "Eval plan").
+#
+# Only this manifest and README.md are committed. The documents stay in this folder,
+# git-ignored. `uv run spec2test corpora fetch` downloads the `fetch = "auto"` ones and
+# checks their sha256. Put the `fetch = "manual"` ones here yourself, then run
+# `uv run spec2test corpora status` to see their hashes.
+
+[[documents]]
+id = "fmvss-111"
+title = "FMVSS No. 111, Rear visibility (49 CFR 571.111), 2025 annual edition"
+file = "fmvss-111.pdf"
+url = "https://www.govinfo.gov/content/pkg/CFR-2025-title49-vol6/pdf/CFR-2025-title49-vol6-sec571-111.pdf"
+fetch = "auto"
+sha256 = "dc5adb68c4c2b91df44b4bd1b8136009d001b2b2a2e6b2439b28c650f9099261"
+licence = "US federal regulation; public domain."
+# The govinfo section PDF shares its last page with the next CFR sections.
+end_marker = "§571.112 [Reserved]"
+
+[[documents]]
+id = "unece-r158"
+title = "UN Regulation No. 158, Reversing motion devices (E/ECE/TRANS/505/Rev.3/Add.157), original 2021 text"
+file = "unece-r158.pdf"
+url = "https://unece.org/sites/default/files/2021-07/R158e_0.pdf"
+fetch = "manual"
+sha256 = "8abe638d997d07c00841dd90a058e8917a50ab5aadd70affddbb317768f94535"
+licence = "UNECE publication; freely downloadable, redistribution not granted. Keep out of git."
+# Pinned on purpose: later supplements and amendments (2021-2025) change the text, and a
+# gold set needs one fixed edition to label against.
+notes = "unece.org answers scripted downloads with a bot challenge: open the URL in a browser and save the PDF here as unece-r158.pdf."
+
+[[documents]]
+id = "nasa-std-5001"
+title = "NASA-STD-5001B w/Change 3, Structural Design and Test Factors of Safety for Spaceflight Hardware"
+file = "nasa-std-5001.pdf"
+url = "https://standards.nasa.gov/sites/default/files/standards/NASA/B-w/CHANGE-3/3/2022-10-24-NASA-STD-5001B-w-Change-3-Approved.pdf"
+fetch = "auto"
+sha256 = "f4d15692f1181ee1b9d47f3394bb2a7f79b707e98cdba6d5bf523e8e4cfb6bb5"
+licence = "NASA technical standard; approved for public release, distribution unlimited."
+
+[[documents]]
+id = "fsae-rules"
+title = "Formula SAE Rules 2026, Version 1.0 (10 Sept 2025)"
+file = "fsae-rules.pdf"
+url = "https://www.fsaeonline.com/"
+fetch = "manual"
+sha256 = "4620c33700f16bdc514a1e959b8746caef0a8878646c9b79b2ed01e8f790f7d8"
+licence = "SAE International. Kept out of the public repo (docs/PLAN.md)."
+notes = "Download the current Formula SAE Rules PDF from the FSAE Online rules page and save it here as fsae-rules.pdf."

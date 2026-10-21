@@ -6,8 +6,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.17.0",
+    "docling>=2.141.0",
     "pydantic>=2.14.1",
+    # Direct dependencies only so [tool.uv.sources] can pin them to the CPU build: the default
+    # Linux wheels bundle CUDA (several GB) and ingestion does not need a GPU.
+    "torch>=2.2.2",
+    "torchvision>=0.17.2",
 ]
+
+[project.scripts]
+spec2test = "spec2test.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
@@ -25,11 +33,30 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
     "live: calls a real LLM API; runs only when SPEC2TEST_LIVE=1",
+    "corpora: parses the gold-set documents in corpora/; runs only when SPEC2TEST_CORPORA=1",
+]
+filterwarnings = [
+    # Raised inside Docling's own PDF pipeline, not by our options.
+    "ignore:`force_full_page_ocr` is deprecated:DeprecationWarning",
+    "ignore:This field is deprecated. Use `generate_page_images=True`:DeprecationWarning",
 ]
 
 [dependency-groups]
 dev = [
+    "fpdf2>=2.8.0",
     "httpx2>=2.15.1",
+    "openpyxl>=3.1.5",
+    "pypdfium2>=4.30.0",
     "pytest>=9.1.1",
+    "python-docx>=1.2.0",
     "ruff>=0.17.1",
 ]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

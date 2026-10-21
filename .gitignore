@@ -7,3 +7,8 @@ dist/
 build/
 *.egg-info/
 .env
+
+# Corpus documents are never committed; only the manifest and README are.
+corpora/*
+!corpora/manifest.toml
+!corpora/README.md

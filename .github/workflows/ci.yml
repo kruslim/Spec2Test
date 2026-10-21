@@ -14,12 +14,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13"]
+    env:
+      # Docling's PDF layout and table models (~500 MB) download here on first use.
+      HF_HOME: ${{ github.workspace }}/../hf-home
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../hf-home
+          key: docling-models-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: docling-models-${{ runner.os }}-
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .

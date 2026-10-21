@@ -12,7 +12,8 @@
 
 - Install: `uv sync`
 - Lint: `uv run ruff check .` and `uv run ruff format --check .`
-- Test: `uv run pytest` (offline; the live test needs `SPEC2TEST_LIVE=1`)
+- Test: `uv run pytest` (offline; the live test needs `SPEC2TEST_LIVE=1`, the gold-set
+  corpora test needs `SPEC2TEST_CORPORA=1` and the documents in `corpora/`)
 
 ## Conventions
 
