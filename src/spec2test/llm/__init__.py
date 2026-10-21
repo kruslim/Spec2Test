@@ -1,8 +1,10 @@
 from spec2test.llm.anthropic_client import AnthropicLLM
 from spec2test.llm.base import LLMClient, LLMError, LLMOutputError, LLMRefusalError
 from spec2test.llm.fake import FakeLLM, Fixture, FixtureNotFoundError, LLMCall
+from spec2test.llm.openai_compat import PRESETS, OpenAICompatLLM
 
 __all__ = [
+    "PRESETS",
     "AnthropicLLM",
     "FakeLLM",
     "Fixture",
@@ -12,4 +14,5 @@ __all__ = [
     "LLMError",
     "LLMOutputError",
     "LLMRefusalError",
+    "OpenAICompatLLM",
 ]

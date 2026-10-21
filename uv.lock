@@ -2433,6 +2433,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "docling" },
+    { name = "httpx2" },
     { name = "pydantic" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
@@ -2443,7 +2444,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "fpdf2" },
-    { name = "httpx2" },
     { name = "openpyxl" },
     { name = "pypdfium2" },
     { name = "pytest" },
@@ -2455,6 +2455,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=1.17.0" },
     { name = "docling", specifier = ">=2.141.0" },
+    { name = "httpx2", specifier = ">=2.15.1" },
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "torch", specifier = ">=2.2.2", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", specifier = ">=0.17.2", index = "https://download.pytorch.org/whl/cpu" },
@@ -2463,7 +2464,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "fpdf2", specifier = ">=2.8.0" },
-    { name = "httpx2", specifier = ">=2.15.1" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pypdfium2", specifier = ">=4.30.0" },
     { name = "pytest", specifier = ">=9.1.1" },

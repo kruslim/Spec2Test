@@ -22,6 +22,28 @@ uv run spec2test ingest path/to/spec.pdf --json   # the whole Document
 PDFs must be born-digital (no OCR yet). The first PDF parse downloads Docling's layout
 and table models (~500 MB) to the Hugging Face cache, and later runs are offline.
 
+## Extract
+
+`spec2test.extract.extract(document, llm)` sends each section with normative wording
+(shall, should, must, may, ...) to the model and returns an `Extraction`: cited
+`Requirement` records, compound requirements split one obligation per record. The model
+states each quote; the pipeline finds it in the section and fills in the offsets, page
+and section. A quote that is not in the section verbatim goes back to the model once with
+the error, then lands in `Extraction.rejected`, never in `requirements`.
+`check_citation(requirement, document)` verifies any record's anchor against the source.
+
+```bash
+uv run spec2test extract path/to/spec.pdf                  # live, Anthropic API
+uv run spec2test extract doc.json --provider kimi-code     # live, Kimi Code (KIMI_CODE_API_KEY)
+uv run spec2test extract doc.json --fake tests/fixtures/llm  # offline, FakeLLM fixtures
+```
+
+`--provider kimi-code` uses `spec2test.llm.OpenAICompatLLM`, a client for any
+OpenAI-compatible chat-completions endpoint. It sends the JSON Schema in the prompt and
+validates the reply with Pydantic.
+
+`doc.json` is a Document saved with `spec2test ingest --json`.
+
 The gold-set source documents live in `corpora/`, git-ignored; see
 [corpora/README.md](corpora/README.md).
 

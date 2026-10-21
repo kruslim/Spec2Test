@@ -1,0 +1,127 @@
+[
+  {
+    "name": "extract-retry-switch-fixed",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["failed the citation check", "The switch must be operable"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The switch shall be operable with one hand.",
+          "text": "The switch shall be operable with one hand.",
+          "type": "functional",
+          "strength": "shall",
+          "verification_method": "demonstration"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-retry-battery-still-wrong",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["failed the citation check", "The battery lasts 8 h"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The battery shall last 8 hours.",
+          "text": "The battery should last 8 h at full brightness.",
+          "type": "performance",
+          "strength": "should",
+          "verification_method": "test"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-brightness",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 2.1 Brightness"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The lamp shall emit at least 400 lm within 2.0 s of switch-on.",
+          "text": "The lamp shall emit at least 400 lm within 2.0 s of switch-on.",
+          "type": "performance",
+          "strength": "shall",
+          "criteria": [
+            {"parameter": "luminous flux", "comparator": "ge", "value": "400", "unit": "lm"},
+            {"parameter": "time to reach luminous flux", "comparator": "le", "value": "2.0", "unit": "s"}
+          ],
+          "conditions": ["after switch-on"],
+          "verification_method": "test"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-housing-compound",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 2.2 Housing"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The housing shall be red",
+          "text": "The housing shall be red.",
+          "type": "functional",
+          "strength": "shall",
+          "verification_method": "inspection"
+        },
+        {
+          "quote": "shall carry a voltage label",
+          "text": "The housing shall carry a voltage label.",
+          "type": "regulatory",
+          "strength": "shall",
+          "verification_method": "inspection"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-switch-paraphrased",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 2.3 Switch"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The switch must be operable with one hand.",
+          "text": "The switch shall be operable with one hand.",
+          "type": "functional",
+          "strength": "shall",
+          "verification_method": "demonstration"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-battery-paraphrased",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 2.4 Battery"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The battery lasts 8 h at full brightness.",
+          "text": "The battery should last 8 h at full brightness.",
+          "type": "performance",
+          "strength": "should",
+          "verification_method": "test"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extract-mounting-across-paragraphs",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 2.5 Mounting"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "The lamp shall mount on either: a. a 35 mm rail; or b. a wall bracket.",
+          "text": "The lamp shall mount on either a 35 mm rail or a wall bracket.",
+          "type": "interface",
+          "strength": "shall",
+          "criteria": [{"parameter": "rail width", "comparator": "eq", "value": "35", "unit": "mm"}],
+          "verification_method": "inspection"
+        }
+      ]
+    }
+  }
+]

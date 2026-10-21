@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.17.0",
     "docling>=2.141.0",
+    "httpx2>=2.15.1",
     "pydantic>=2.14.1",
     # Direct dependencies only so [tool.uv.sources] can pin them to the CPU build: the default
     # Linux wheels bundle CUDA (several GB) and ingestion does not need a GPU.
@@ -44,7 +45,6 @@ filterwarnings = [
 [dependency-groups]
 dev = [
     "fpdf2>=2.8.0",
-    "httpx2>=2.15.1",
     "openpyxl>=3.1.5",
     "pypdfium2>=4.30.0",
     "pytest>=9.1.1",

@@ -8,7 +8,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from spec2test import corpora
+from spec2test.extract import extract
 from spec2test.ingest import Document, UnsupportedFormatError, ingest
+from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -29,6 +31,21 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--end-marker", help="drop everything from the block starting with this")
     p.add_argument("--json", action="store_true", help="print the whole Document as JSON")
     p.set_defaults(run=_ingest)
+
+    p = commands.add_parser("extract", help="extract cited requirements from a document")
+    p.add_argument("path", type=Path, help="a spec, or a Document saved by `ingest --json`")
+    p.add_argument("--doc-id", help="document ID (default: from the file name)")
+    p.add_argument("--end-marker", help="drop everything from the block starting with this")
+    p.add_argument(
+        "--provider",
+        choices=["anthropic", *PRESETS],
+        default="anthropic",
+        help="model provider (default: anthropic)",
+    )
+    p.add_argument("--model", help="model ID (default: the provider's default)")
+    p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
+    p.add_argument("--json", action="store_true", help="print the whole Extraction as JSON")
+    p.set_defaults(run=_extract)
 
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
@@ -52,6 +69,44 @@ def _ingest(args: argparse.Namespace) -> int:
         print(f"p{s.page:<4} {indent}{s.anchor or '-'}  {s.title or ''}".rstrip())
     print(_summary(doc))
     return 0
+
+
+def _extract(args: argparse.Namespace) -> int:
+    try:
+        if args.path.suffix.lower() == ".json":
+            doc = Document.model_validate_json(args.path.read_text(encoding="utf-8"))
+        else:
+            doc = ingest(args.path, args.doc_id, end_marker=args.end_marker)
+    except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.fake is not None:
+        llm: LLMClient = FakeLLM.from_dir(args.fake)
+    elif args.provider == "anthropic":
+        llm = AnthropicLLM(args.model) if args.model else AnthropicLLM()
+    else:
+        model = {"model": args.model} if args.model else {}
+        llm = OpenAICompatLLM.preset(args.provider, **model)
+
+    result = extract(doc, llm)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        for r in result.requirements:
+            method = r.verification_method.value if r.verification_method else "-"
+            print(f"{r.id}  p{r.source_anchor.page}  {method:13} {r.text}")
+        for rej in result.rejected:
+            print(f"rejected  {doc.sections[rej.section].anchor or '-'}  {rej.draft.text}")
+            for e in rej.errors:
+                print(f"    {e}")
+        for f in result.failed_sections:
+            print(f"failed  {doc.sections[f.section].anchor or '-'}  {f.error}")
+        print(
+            f"{len(result.requirements)} requirements, {len(result.rejected)} rejected, "
+            f"{result.retried} retried, {len(result.failed_sections)} sections failed, "
+            f"{len(result.skipped_sections)} skipped"
+        )
+    return 1 if result.failed_sections else 0
 
 
 def _corpora(args: argparse.Namespace) -> int:
