@@ -1,6 +1,6 @@
 # Spec2Test — Build Plan
 
-Oct 20, 2026 · @Kenneth
+Oct 20, 2026 · @Kenneth · updated Oct 21, 2026 (model roles, eval)
 
 ## What it is
 
@@ -40,7 +40,7 @@ flowchart LR
     review --> export["Export adapters<br/>CSV, XLSX, YAML, Jira, custom"]
 
     review -- decisions logged --> evals("Eval harness<br/>Gold sets score extract, lint and generate;<br/>review decisions give the acceptance rate")
-    generate -. model calls .-> llm("LLM interface<br/>Anthropic by default, or any approved endpoint;<br/>used by extract, lint, generate and the judge")
+    generate -. model calls .-> llm("LLM interface<br/>Kimi by default, Anthropic or any approved endpoint;<br/>used by extract, lint, generate and the judge")
 
     classDef core stroke-width:2px
     class extract core
@@ -48,11 +48,25 @@ flowchart LR
 
 Adapters at both ends are where each customer's formats live; the core in between never changes. That boundary is the FDE work, and it is what lets Ford plug in later without anything crossing the line.
 
+## Model roles
+
+The pipeline only ever talks to `LLMClient`, so models are a configuration choice. One rule fixes the roles: **a model never grades its own work.** If the model that writes the answer key also takes the test, its blind spots count as correct and the scores overstate accuracy.
+
+| Role | Model | Notes |
+| --- | --- | --- |
+| Pipeline: extract, lint, generate | Kimi (`kimi-code`, OpenAI-compatible endpoint) | The default `--provider`. Anthropic (`--provider anthropic`) and any approved endpoint stay pluggable. |
+| Gold-set labeler | Claude Opus | Labels from the source text directly, never from a pipeline run. |
+| Second labeler | Gemini (planned) | Labels the same scope independently; the eval harness scores one label set against the other, and the disagreements are what you review by hand. |
+| Reviewer | You | Settles every disagreement and signs off a gold set before its numbers are quoted. |
+| Test-case judge (phase 5) | Neither the generator nor a labeler (Gemini once added) | Calibrated against your own labels. |
+
+The eval enforces this: each gold set records its `labeler` and whether a person has `reviewed` it, and every eval run warns when the scored model is from the labeler's family or the gold set is unreviewed. No vision model is involved: Docling reads PDFs with its own local layout models.
+
 ## Eval plan
 
 The eval harness is built in phase 3, before generation is polished. Building measurement first is the story that separates you from other candidates, and it is what lets you claim cross-industry accuracy honestly.
 
-**Gold sets** (you hand-label each one; public sources only):
+**Gold sets** (public sources only; labeled by a model other than the pipeline's, see Model roles, then reviewed by you). Each is `gold/<corpus>.jsonl` plus a `.toml` that states the labeled scope, the labeler and whether it has been reviewed (format: `gold/README.md`):
 
 | Corpus | Why it is in the set | Size target |
 | --- | --- | --- |
@@ -66,20 +80,21 @@ The eval harness is built in phase 3, before generation is polished. Building me
 | Metric | What it measures |
 | --- | --- |
 | Extraction recall / precision | Requirements found vs. the gold list |
-| Field accuracy | Values, units, tolerances and conditions exactly right |
-| Method accuracy | Verification method matches your label |
+| Field accuracy | Values, units, tolerances and conditions right: values and comparators exactly, units by meaning (`s` = `seconds`), conditions by close text match |
+| Method accuracy | Verification method matches the gold label |
 | Testability flags | Vague, compound or unit-less requirements caught (precision / recall) |
-| Test-case quality | Rubric-based LLM judge, calibrated against your own labels; report judge-human agreement |
+| Test-case quality | Rubric-based LLM judge (a different model from the generator), calibrated against your own labels; report judge-human agreement |
+| Label agreement | How often the two labelers agree, before your review; the disagreements are your review list |
 | Acceptance rate | Share of items design partners accept unedited (the production metric) |
-| Cost and latency | Dollars and seconds per page |
+| Cost and latency | Dollars and seconds per page (seconds are recorded today; dollars need token counts from `LLMClient`) |
 
-Two test layers: deterministic fake-LLM tests on every commit, and a live eval run on every prompt or model change. Reuse the failure-taxonomy approach from Canopy so every miss gets a category, not just a score.
+Two test layers: deterministic fake-LLM tests on every commit, and a live eval run on every prompt or model change. Reuse the failure-taxonomy approach from Canopy so every miss gets a category, not just a score. A saved run can be rescored without model calls (`spec2test eval <corpus> --rescore results.json`), so fixing a label costs nothing.
 
 ## Phased build
 
 Ten phases, roughly 6–8 weeks at evening pace (estimate). Run each phase as one Claude Code session, review the diff, make sure tests pass, then commit. Each commit is your rollback point.
 
-**Stack:** Python + uv, Pydantic for the schema, Docling for PDF/DOCX/XLSX parsing, a provider-agnostic LLM interface (Anthropic by default, plus a fake model for offline tests), SQLite to start, Streamlit for the v1 review UI.
+**Stack:** Python + uv, Pydantic for the schema, Docling for PDF/DOCX/XLSX parsing, a provider-agnostic LLM interface (Kimi by default, Anthropic and any OpenAI-compatible endpoint, plus a fake model for offline tests), SQLite to start, Streamlit for the v1 review UI.
 
 ### Phase 0 — Scaffold
 
@@ -113,7 +128,9 @@ Done when: `spec2test eval <corpus>` prints the metrics table and writes an HTML
 Build spec2test/evals: gold sets stored as JSONL (one labeled Requirement per line). Align extracted requirements to gold by quote overlap. Compute extraction precision/recall, field accuracy, method accuracy and testability-flag precision/recall. Add a failure taxonomy field to every miss. CLI command `spec2test eval` outputs a terminal table and an HTML report. Runs offline with FakeLLM and live with the real model.
 ```
 
-Then hand-label FMVSS 111 before moving on.
+Then label FMVSS 111 before moving on.
+
+Status (Oct 21, 2026): done. Claude Opus labeled 39 requirements in FMVSS 111 (S5, S10, S11), and you reviewed the gold set. The first live run (Kimi) scored 100% recall, 86.7% precision and 51.3% field accuracy; most misses are labeling-policy disagreements (extra conditions, "may" permissions, verification methods). Once Gemini is added, have it label the same scope too, to report label agreement.
 
 ### Phase 4 — Testability linter
 
@@ -128,7 +145,7 @@ Add a testability linter: deterministic rules (vague terms such as "adequate" or
 Done when: each verification method renders its output type and the LLM judge scores test-case quality.
 
 ```text
-Generate VerificationItems per requirement by verification method: Inspection to checklist item, Test to test case (preconditions, setup, steps, expected result, pass/fail criterion, equipment), Demonstration and Analysis to evidence items. Add an LLM judge with a written rubric and a calibration script that reports judge-vs-human agreement on a labeled sample.
+Generate VerificationItems per requirement by verification method: Inspection to checklist item, Test to test case (preconditions, setup, steps, expected result, pass/fail criterion, equipment), Demonstration and Analysis to evidence items. Add an LLM judge with a written rubric and a calibration script that reports judge-vs-human agreement on a labeled sample. The judge must be a different model from the generator; warn when they share a model family, as the eval does for gold-set labelers.
 ```
 
 ### Phase 6 — Traceability and spec diffs
@@ -189,7 +206,7 @@ The payoff: Ford usage becomes a bullet under your Ford experience, and the sepa
 
 Fill the brackets only with numbers you have measured.
 
-- **Projects:** Built and deployed Spec2Test, an AI platform that turns requirements documents into traceable test cases and inspection checklists; \[X\]% extraction recall and \[Y\]% field accuracy across four hand-labeled regulatory corpora (automotive, aerospace, motorsport).
+- **Projects:** Built and deployed Spec2Test, an AI platform that turns requirements documents into traceable test cases and inspection checklists; \[X\]% extraction recall and \[Y\]% field accuracy across four human-reviewed regulatory gold sets (automotive, aerospace, motorsport). Describe the labels as they were made, e.g. "labeled by two independent models, every disagreement resolved by hand"; never "hand-labeled" for model labels.
 - **Projects:** Deployed to \[N\] engineering teams (Formula SAE, \[startup\]); \[Z\]% of generated items accepted without edits; flagged \[K\] untestable requirements before inspection.
 - **Ford (if adopted):** Integrated an open-source requirements-to-test pipeline into the surround-view camera validation workflow via custom adapters; cut test-planning time by \[T\]%.
 

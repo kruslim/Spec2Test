@@ -1,0 +1,23 @@
+# FMVSS 111 gold set (corpora/manifest.toml: fmvss-111, 2025 annual edition).
+#
+# Provenance: labeled by Claude Opus 5.5 from the ingested text on 2026-10-21, at the
+# project owner's request, and reviewed by the project owner on 2026-10-21. Scores for
+# Kimi (the main extraction model) are independent of the labeler; scores for an Opus
+# extractor share its blind spots.
+#
+# Labeling policy:
+# - One record per obligation. Alternatives ("X or Y", "either ... or") stay one record;
+#   so do "tilting in both the horizontal and vertical directions" and "after each
+#   durability test in S14.3.1, S14.3.2, and S14.3.3".
+# - Not requirements: permissions that only relax another requirement ("The line of sight
+#   may be partially obscured ...", "need not be adjustable from the driver's seat"),
+#   statements that define how a measurement is made (driver's eye reference points,
+#   SAE J964 reflectance method), and umbrella sentences that only point at their
+#   subclauses (S5.4).
+# - Conditions: applicability (GVWR, manufacture dates, "if ..."), and the test procedure a
+#   clause itself names ("when tested in accordance with S14.1").
+# - Criteria units as the ingested text writes them: area is "mm 2" (mm² in the PDF).
+
+scope = ["S5", "S10", "S11"]
+labeler = "claude-opus-5-5"
+reviewed = true   # by the project owner, 2026-10-21

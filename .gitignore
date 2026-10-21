@@ -12,3 +12,10 @@ build/
 corpora/*
 !corpora/manifest.toml
 !corpora/README.md
+
+# Eval runs: report.html and results.json per run.
+eval-reports/
+
+# Gold sets for documents that stay out of git (corpora/manifest.toml, licence).
+gold/unece-r158.*
+gold/fsae-rules.*

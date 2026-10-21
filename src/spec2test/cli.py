@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 
-from spec2test import corpora
+from spec2test import corpora, evals
 from spec2test.extract import extract
 from spec2test.ingest import Document, UnsupportedFormatError, ingest
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
@@ -36,16 +37,29 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("path", type=Path, help="a spec, or a Document saved by `ingest --json`")
     p.add_argument("--doc-id", help="document ID (default: from the file name)")
     p.add_argument("--end-marker", help="drop everything from the block starting with this")
-    p.add_argument(
-        "--provider",
-        choices=["anthropic", *PRESETS],
-        default="anthropic",
-        help="model provider (default: anthropic)",
-    )
-    p.add_argument("--model", help="model ID (default: the provider's default)")
-    p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
+    _add_llm_args(p)
     p.add_argument("--json", action="store_true", help="print the whole Extraction as JSON")
     p.set_defaults(run=_extract)
+
+    p = commands.add_parser("eval", help="score extraction against a labeled gold set")
+    p.add_argument("corpus", help="corpus ID; its gold set is gold/CORPUS.jsonl")
+    p.add_argument("--gold", type=Path, help="gold set JSONL (default: gold/CORPUS.jsonl)")
+    p.add_argument(
+        "--doc",
+        type=Path,
+        help="a spec, or a Document saved by `ingest --json` (default: CORPUS from the "
+        "corpora manifest)",
+    )
+    p.add_argument("--dir", type=Path, default=corpora.DEFAULT_DIR, help="corpora folder")
+    _add_llm_args(p)
+    p.add_argument(
+        "--rescore",
+        type=Path,
+        metavar="RESULTS",
+        help="score the extraction saved in a previous run's results.json; no model calls",
+    )
+    p.add_argument("--out", type=Path, help="report folder (default: eval-reports/CORPUS/TIME)")
+    p.set_defaults(run=_eval)
 
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
@@ -53,6 +67,33 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--dir", type=Path, default=corpora.DEFAULT_DIR, help="corpora folder")
     p.set_defaults(run=_corpora)
     return parser
+
+
+def _add_llm_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--provider",
+        choices=["anthropic", *PRESETS],
+        default="kimi-code",
+        help="model provider (default: kimi-code)",
+    )
+    p.add_argument("--model", help="model ID (default: the provider's default)")
+    p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
+
+
+def _llm(args: argparse.Namespace) -> LLMClient:
+    if args.fake is not None:
+        return FakeLLM.from_dir(args.fake)
+    if args.provider == "anthropic":
+        return AnthropicLLM(args.model) if args.model else AnthropicLLM()
+    model = {"model": args.model} if args.model else {}
+    return OpenAICompatLLM.preset(args.provider, **model)
+
+
+def _load_document(path: Path, doc_id: str | None, end_marker: str | None) -> Document:
+    """A spec to ingest, or a Document saved by `ingest --json`."""
+    if path.suffix.lower() == ".json":
+        return Document.model_validate_json(path.read_text(encoding="utf-8"))
+    return ingest(path, doc_id, end_marker=end_marker)
 
 
 def _ingest(args: argparse.Namespace) -> int:
@@ -73,22 +114,12 @@ def _ingest(args: argparse.Namespace) -> int:
 
 def _extract(args: argparse.Namespace) -> int:
     try:
-        if args.path.suffix.lower() == ".json":
-            doc = Document.model_validate_json(args.path.read_text(encoding="utf-8"))
-        else:
-            doc = ingest(args.path, args.doc_id, end_marker=args.end_marker)
+        doc = _load_document(args.path, args.doc_id, args.end_marker)
     except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    if args.fake is not None:
-        llm: LLMClient = FakeLLM.from_dir(args.fake)
-    elif args.provider == "anthropic":
-        llm = AnthropicLLM(args.model) if args.model else AnthropicLLM()
-    else:
-        model = {"model": args.model} if args.model else {}
-        llm = OpenAICompatLLM.preset(args.provider, **model)
 
-    result = extract(doc, llm)
+    result = extract(doc, _llm(args))
     if args.json:
         print(result.model_dump_json(indent=2))
     else:
@@ -107,6 +138,37 @@ def _extract(args: argparse.Namespace) -> int:
             f"{len(result.skipped_sections)} skipped"
         )
     return 1 if result.failed_sections else 0
+
+
+def _eval(args: argparse.Namespace) -> int:
+    try:
+        if args.doc is not None:
+            doc = _load_document(args.doc, args.corpus, None)
+        else:
+            entry = next((d for d in corpora.load_manifest(args.dir) if d.id == args.corpus), None)
+            if entry is None:
+                raise ValueError(
+                    f"{args.corpus!r} is not in {args.dir / corpora.MANIFEST}; pass --doc"
+                )
+            doc = corpora.parse(entry, args.dir)
+        gold = evals.load_gold(args.gold or evals.gold_path(args.corpus), doc)
+        previous = None
+        if args.rescore is not None:
+            previous = evals.EvalRun.model_validate_json(args.rescore.read_text(encoding="utf-8"))
+    except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        # GoldError and pydantic's ValidationError are ValueErrors too.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if previous is not None:
+        run = evals.rescore(doc, gold, previous, corpus=args.corpus)
+    else:
+        run = evals.evaluate(doc, gold, _llm(args), corpus=args.corpus)
+    out = args.out or Path("eval-reports", args.corpus, datetime.now().strftime("%Y%m%d-%H%M%S"))
+    html, results = evals.write_report(run, out)
+    print(evals.text_report(run))
+    print(f"\nreport:  {html}\nresults: {results}")
+    return 0
 
 
 def _corpora(args: argparse.Namespace) -> int:

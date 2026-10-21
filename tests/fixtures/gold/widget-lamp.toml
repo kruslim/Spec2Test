@@ -1,0 +1,4 @@
+# Clause 2 and its subclauses are labeled completely; clause 1 states no requirement.
+scope = ["2"]
+labeler = "Spec2Test tests"
+reviewed = true

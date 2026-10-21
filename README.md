@@ -33,19 +33,59 @@ the error, then lands in `Extraction.rejected`, never in `requirements`.
 `check_citation(requirement, document)` verifies any record's anchor against the source.
 
 ```bash
-uv run spec2test extract path/to/spec.pdf                  # live, Anthropic API
-uv run spec2test extract doc.json --provider kimi-code     # live, Kimi Code (KIMI_CODE_API_KEY)
+uv run spec2test extract path/to/spec.pdf                  # live, Kimi Code (KIMI_CODE_API_KEY)
+uv run spec2test extract doc.json --provider anthropic     # live, Anthropic API
 uv run spec2test extract doc.json --fake tests/fixtures/llm  # offline, FakeLLM fixtures
 ```
 
-`--provider kimi-code` uses `spec2test.llm.OpenAICompatLLM`, a client for any
-OpenAI-compatible chat-completions endpoint. It sends the JSON Schema in the prompt and
-validates the reply with Pydantic.
+Kimi is the default extraction model. `--provider kimi-code` uses
+`spec2test.llm.OpenAICompatLLM`, a client for any OpenAI-compatible chat-completions
+endpoint. It sends the JSON Schema in the prompt and validates the reply with Pydantic.
 
 `doc.json` is a Document saved with `spec2test ingest --json`.
 
 The gold-set source documents live in `corpora/`, git-ignored; see
 [corpora/README.md](corpora/README.md).
+
+## Eval
+
+`spec2test eval <corpus>` extracts from a corpus document, scores the result against its
+labeled gold set in `gold/<corpus>.jsonl` (format: [gold/README.md](gold/README.md)),
+prints the metrics and writes `report.html` and `results.json` to
+`eval-reports/<corpus>/<time>/`.
+
+```bash
+uv run spec2test eval fmvss-111                     # live, Kimi Code
+uv run spec2test eval fmvss-111 --fake DIR          # offline, FakeLLM fixtures
+uv run spec2test eval fmvss-111 --rescore RESULTS   # score a saved run again, no model calls
+uv run spec2test eval widget-lamp --doc doc.json --gold g.jsonl   # any document and gold set
+```
+
+Extracted and gold records align by quote overlap: a pair needs to share at least half of
+the shorter quote, and each record aligns at most once. The metrics:
+
+| Metric | Over | Right when |
+| --- | --- | --- |
+| Extraction precision / recall | extracted / gold records in scope | aligned |
+| Field accuracy | aligned pairs | criteria and conditions both right |
+| Criteria accuracy | aligned pairs | same comparators, values, units and tolerances |
+| Conditions accuracy | aligned pairs | each gold condition has a close match (text similarity ≥ 0.8) |
+| Type / strength accuracy | aligned pairs | equal |
+| Method accuracy | aligned pairs with a gold method | equal |
+| Flag precision / recall | testability flag kinds on aligned pairs | same kind raised |
+
+Every miss gets a failure category: why a gold record was missed (`section_failed`,
+`section_skipped`, `merged`, `span_mismatch`, `citation_rejected`, `not_extracted`), why
+an extracted one is extra (`over_split`, `span_mismatch`, `not_in_gold`), or which field
+of an aligned pair is wrong (`wrong_type`, `criterion_unit`, `condition_missing`,
+`wrong_method`, `flag_missed`, ...). The report counts them and lists each one with its
+quote.
+
+Model roles: the model being scored must not have labeled its own gold set, or its blind
+spots count as correct. Kimi extracts; the gold sets are labeled by a person or by a
+different model (FMVSS 111: Claude Opus 5.5, see `gold/fmvss-111.toml`). The report warns
+when the extraction model is from the labeler's model family, and when no person has
+reviewed the gold set yet.
 
 ## Development
 
