@@ -33,3 +33,14 @@ class LLMClient(ABC):
 
         Raises `LLMError` (or a subclass) instead of returning invalid output.
         """
+
+
+def model_family(model: str) -> str:
+    """'claude-opus-5-5' -> 'claude', 'kimi-for-coding' -> 'kimi', 'models/gemini-3.1-pro'
+    -> 'gemini'. Two models of one family are assumed to share blind spots."""
+    return model.casefold().split("/")[-1].split("-")[0]
+
+
+def model_name(llm: LLMClient) -> str:
+    """The model ID an `LLMClient` calls, or its class name if it has none."""
+    return getattr(llm, "model", None) or type(llm).__name__

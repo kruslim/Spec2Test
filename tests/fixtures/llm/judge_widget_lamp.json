@@ -1,0 +1,41 @@
+[
+  {
+    "name": "judge-brightness",
+    "schema": "JudgeAnswer",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.1:1\"", "Grade this item"],
+    "response": {
+      "covers": {"reason": "Checks the 400 lm level and the 2.0 s time.", "passed": true},
+      "faithful": {"reason": "Values copied; the supply voltage is a placeholder.", "passed": true},
+      "objective_verdict": {"reason": "Flux and time are both measured.", "passed": true},
+      "executable": {"reason": "Sphere, supply and steps are given.", "passed": true},
+      "method_fit": {"reason": "Measures under controlled conditions.", "passed": true},
+      "acceptable": true
+    }
+  },
+  {
+    "name": "judge-switch",
+    "schema": "JudgeAnswer",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.3:1\"", "Grade this item"],
+    "response": {
+      "covers": {"reason": "Covers one-handed operation.", "passed": true},
+      "faithful": {"reason": "No value invented; the force limit is a placeholder.", "passed": true},
+      "objective_verdict": {"reason": "Without a force limit the verdict is a judgement call.", "passed": false},
+      "executable": {"reason": "Two clear steps.", "passed": true},
+      "method_fit": {"reason": "Operates the switch and observes.", "passed": true},
+      "acceptable": false
+    }
+  },
+  {
+    "name": "judge-checklist",
+    "schema": "JudgeAnswer",
+    "prompt_contains": ["<item kind=\"checklist\">"],
+    "response": {
+      "covers": {"reason": "Covers the requirement.", "passed": true},
+      "faithful": {"reason": "Nothing invented.", "passed": true},
+      "objective_verdict": {"reason": "Plainly observable.", "passed": true},
+      "executable": {"reason": "Says where to look.", "passed": true},
+      "method_fit": {"reason": "A visual inspection.", "passed": true},
+      "acceptable": true
+    }
+  }
+]

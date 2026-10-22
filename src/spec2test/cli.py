@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
 from spec2test import corpora, evals
 from spec2test.extract import Extraction, extract
+from spec2test.generate import Generation, generate, render
 from spec2test.ingest import Document, UnsupportedFormatError, ingest
-from spec2test.lint import lint
+from spec2test.judge import (
+    Judging,
+    calibrate,
+    calibration_report,
+    judge,
+    load_sample,
+    make_sample,
+    quality_report,
+    write_sample,
+)
+from spec2test.lint import Lint, lint
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
+from spec2test.schema import Requirement
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -78,6 +92,48 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, help="report folder (default: eval-reports/CORPUS/TIME)")
     p.set_defaults(run=_eval)
 
+    p = commands.add_parser(
+        "generate", help="write a checklist item, test case or evidence item per requirement"
+    )
+    p.add_argument(
+        "path",
+        type=Path,
+        help="requirements: an Extraction (`extract --json`), a Lint (`lint --json`) or an "
+        "eval run's results.json",
+    )
+    _add_doc_args(p, "the source, so the clauses requirements reference are sent too")
+    _add_llm_args(p)
+    p.add_argument("--json", action="store_true", help="print the whole Generation as JSON")
+    p.set_defaults(run=_generate)
+
+    p = commands.add_parser("judge", help="grade generated items against the rubric")
+    p.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
+    _add_doc_args(p, "the source, so the judge sees the referenced clauses too")
+    _add_llm_args(p, default="gemini")
+    p.add_argument("--json", action="store_true", help="print the whole Judging as JSON")
+    p.set_defaults(run=_judge)
+
+    p = commands.add_parser("calibrate", help="measure judge-human agreement")
+    actions = p.add_subparsers(required=True, metavar="ACTION")
+    s = actions.add_parser("sample", help="draw items from a Generation for a person to label")
+    s.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
+    s.add_argument("--out", type=Path, required=True, help="sample JSONL to write")
+    s.add_argument("--size", type=int, default=30, help="items to draw (default: 30)")
+    s.add_argument("--seed", type=int, default=0, help="random seed (default: 0)")
+    _add_doc_args(s, "the source, to store the referenced clauses with each item")
+    s.set_defaults(run=_calibrate_sample)
+    s = actions.add_parser("score", help="judge the labeled sample and report agreement")
+    s.add_argument("path", type=Path, help="a labeled sample JSONL")
+    _add_llm_args(s, default="gemini")
+    s.add_argument(
+        "--judgements",
+        type=Path,
+        metavar="JSON",
+        help="saved judgements (`judge --json` or `calibrate score --json`); no model calls",
+    )
+    s.add_argument("--json", action="store_true", help="print the whole Calibration as JSON")
+    s.set_defaults(run=_calibrate_score)
+
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
     p.add_argument("ids", nargs="*", metavar="ID", help="documents to act on (default: all)")
@@ -86,12 +142,12 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_llm_args(p: argparse.ArgumentParser) -> None:
+def _add_llm_args(p: argparse.ArgumentParser, default: str = "kimi-code") -> None:
     p.add_argument(
         "--provider",
         choices=["anthropic", *PRESETS],
-        default="kimi-code",
-        help="model provider (default: kimi-code)",
+        default=default,
+        help=f"model provider (default: {default})",
     )
     p.add_argument("--model", help="model ID (default: the provider's default)")
     p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
@@ -99,11 +155,43 @@ def _add_llm_args(p: argparse.ArgumentParser) -> None:
 
 def _llm(args: argparse.Namespace) -> LLMClient:
     if args.fake is not None:
-        return FakeLLM.from_dir(args.fake)
+        return FakeLLM.from_dir(args.fake, model=args.model)
     if args.provider == "anthropic":
         return AnthropicLLM(args.model) if args.model else AnthropicLLM()
     model = {"model": args.model} if args.model else {}
     return OpenAICompatLLM.preset(args.provider, **model)
+
+
+def _add_doc_args(p: argparse.ArgumentParser, purpose: str) -> None:
+    group = p.add_mutually_exclusive_group()
+    group.add_argument(
+        "--doc", type=Path, help=f"a spec, or a Document saved by `ingest --json`: {purpose}"
+    )
+    group.add_argument("--corpus", help=f"a corpus ID from the corpora manifest: {purpose}")
+    p.add_argument("--dir", type=Path, default=corpora.DEFAULT_DIR, help="corpora folder")
+
+
+def _doc_arg(args: argparse.Namespace) -> Document | None:
+    """The document `--doc` or `--corpus` names, if either was given."""
+    if args.doc is not None:
+        return _load_document(args.doc, None, None)
+    if args.corpus is not None:
+        entry = next((d for d in corpora.load_manifest(args.dir) if d.id == args.corpus), None)
+        if entry is None:
+            raise ValueError(f"{args.corpus!r} is not in {args.dir / corpora.MANIFEST}")
+        return corpora.parse(entry, args.dir)
+    return None
+
+
+def _load_requirements(path: Path) -> list[Requirement]:
+    """The requirements in an Extraction, a Lint or an eval run's results.json; an eval run
+    gives its in-scope records, with their testability flags."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if "gold_path" in data:
+        return evals.EvalRun.model_validate(data).predicted
+    if "doc_id" in data:
+        return Extraction.model_validate(data).requirements
+    return Lint.model_validate(data).requirements
 
 
 def _load_document(path: Path, doc_id: str | None, end_marker: str | None) -> Document:
@@ -216,6 +304,93 @@ def _eval(args: argparse.Namespace) -> int:
     print(evals.text_report(run))
     print(f"\nreport:  {html}\nresults: {results}")
     return 0
+
+
+def _generate(args: argparse.Namespace) -> int:
+    try:
+        requirements = _load_requirements(args.path)
+        doc = _doc_arg(args)
+    except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    result = generate(requirements, _llm(args), doc=doc)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 1 if result.failed else 0
+    for item in result.items:
+        print(render(item), end="\n\n")
+    for rej in result.rejected:
+        print(f"rejected  {rej.requirement_id}  {rej.kind.value}")
+        for e in rej.errors:
+            print(f"    {e}")
+    for f in result.failed:
+        print(f"failed  {f.requirement_id}  {f.error}")
+    for req_id in result.unclassified:
+        print(f"unclassified  {req_id}  (no verification method)")
+    for s in result.skipped:
+        print(f"skipped  {s.requirement_id}  {s.reason}")
+    kinds = Counter(i.kind.value for i in result.items)
+    print(
+        f"{len(result.items)} items ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))}), "
+        f"{len(result.rejected)} rejected, {result.retried} retried, {len(result.failed)} "
+        f"failed, {len(result.unclassified)} unclassified, {len(result.skipped)} skipped"
+    )
+    return 1 if result.failed else 0
+
+
+def _judge(args: argparse.Namespace) -> int:
+    try:
+        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+        doc = _doc_arg(args)
+        result = judge(generation, _llm(args), doc=doc)
+    except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        # SameModelError is a ValueError too.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        for f in result.failed:
+            print(f"failed  {f.item_id}  {f.error}")
+        print(quality_report(result))
+    return 1 if result.failed else 0
+
+
+def _calibrate_sample(args: argparse.Namespace) -> int:
+    try:
+        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+        doc = _doc_arg(args)
+    except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    sample = make_sample(generation, args.size, doc=doc, seed=args.seed)
+    write_sample(sample, args.out)
+    kinds = Counter(s.item.kind.value for s in sample)
+    print(
+        f"{len(sample)} items ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))}) "
+        f"written to {args.out}; fill in `human` on each line, then run "
+        f"`spec2test calibrate score {args.out}`"
+    )
+    return 0
+
+
+def _calibrate_score(args: argparse.Namespace) -> int:
+    try:
+        sample = load_sample(args.path)
+        saved = None
+        if args.judgements is not None:
+            data = json.loads(args.judgements.read_text(encoding="utf-8"))
+            saved = Judging.model_validate(data.get("judging", data))
+        result = calibrate(sample, None if saved else _llm(args), saved=saved)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(calibration_report(result))
+    return 0 if result.labeled else 1
 
 
 def _corpora(args: argparse.Namespace) -> int:

@@ -115,6 +115,97 @@ different model (FMVSS 111: Claude Opus 5.5, see `gold/fmvss-111.toml`). The rep
 when the extraction model is from the labeler's model family, and when no person has
 reviewed the gold set yet.
 
+## Generate
+
+`spec2test.generate.generate(requirements, llm, doc=...)` writes one `VerificationItem`
+per requirement, rendered by its verification method:
+
+| Method | Item | Fields |
+| --- | --- | --- |
+| Inspection | checklist item | what to inspect, pass condition |
+| Test | test case | preconditions, setup, steps, expected result, pass criterion, equipment |
+| Demonstration | evidence item | description, procedure (required), evidence to capture, acceptance criterion |
+| Analysis | evidence item | description, optional procedure, evidence to attach, acceptance criterion |
+
+The model gets each requirement with its criteria, conditions and testability flags. When
+a document is given it also gets the requirement's source context
+(`spec2test.generate.source_context`):
+
+- the headings of its section and the sections around it ("S5.2 Outside rearview
+  mirror-driver's side" says which mirror "the mirror" is);
+- its whole source section, whose other sentences often say how or from where it is
+  measured;
+- the definitions-section entries for the terms it uses ("Backing event means ...");
+- the clauses it references, each with its subclauses ("tested in accordance with
+  S14.1"; "S5.5.1 through S5.5.7" sends all seven). Up to 12 clauses, 16,000 characters
+  each and 40,000 in all; a clause inside one already sent is not sent twice.
+
+Values and limits the source does not give go in [brackets], never invented; the
+procedure is the model's to write when the source gives none. Every item is checked: its
+verdict (pass condition, pass criterion or acceptance criterion) must state each criterion
+value the requirement has, and a demonstration needs a procedure. An item that fails goes
+back to the model once with the errors, then lands in `Generation.rejected`.
+
+Two kinds of record are never sent. Requirements with no verification method are listed
+in `Generation.unclassified`. Permissions ("may", "need not") and clauses that only say how
+something is determined or where a reference point is ("shall be determined in accordance
+with SAE J964", "shall be those established in Standard No. 104") oblige nothing, so they
+are listed in `Generation.skipped` with the reason (`not_verifiable`). A clause with a
+measurable criterion is always kept.
+
+```bash
+uv run spec2test generate lint.json --corpus fmvss-111          # live, Kimi Code
+uv run spec2test generate eval-reports/fmvss-111/<run>/results.json --corpus fmvss-111 --json > generation.json
+```
+
+The input is an Extraction, a Lint or an eval run's `results.json` (its in-scope records,
+with their testability flags). `--corpus ID` or `--doc PATH` supplies the source for the
+referenced clauses.
+
+## Judge
+
+`spec2test.judge.judge(generation, llm)` grades every item against the written rubric in
+`spec2test.judge.rubric`, one pass/fail verdict with a reason per criterion:
+
+| Criterion | Passes when |
+| --- | --- |
+| `covers` | every obligation, criterion and condition is verified, and no pass/fail condition is added |
+| `faithful` | values, units, tolerances, conditions and stated procedures match the source; no limit invented |
+| `objective_verdict` | two competent testers would reach the same verdict |
+| `executable` | a technician could carry it out without guessing |
+| `method_fit` | it verifies the way its method says (measure, look, operate, calculate) |
+
+plus the overall call, `acceptable`: an engineer would take the item unedited. An item's
+score is the share of criteria it passes; `spec2test judge` prints the mean score, the
+acceptance rate and each criterion's pass rate, per item kind.
+
+The judge must not be the generator: judging with the generator's own model is refused,
+and a judge from the generator's model family gets a warning, as the eval does for
+gold-set labelers. Kimi generates; Gemini (`--provider gemini`, `GEMINI_API_KEY`) is the
+default judge.
+
+```bash
+uv run spec2test judge generation.json --corpus fmvss-111         # live, Gemini
+```
+
+### Calibration
+
+The judge's numbers mean something only once it agrees with a person. To measure that:
+
+```bash
+uv run spec2test calibrate sample generation.json --corpus fmvss-111 --out gold/judge/fmvss-111.jsonl
+# fill in "human" on every line: labeler, a true/false per rubric criterion, acceptable
+uv run spec2test calibrate score gold/judge/fmvss-111.jsonl       # live, Gemini
+uv run spec2test calibrate score gold/judge/fmvss-111.jsonl --judgements calibration.json   # no model calls
+```
+
+`sample` draws items in turn from each item kind (`--size`, `--seed`) and stores each with
+its requirement and source context, so the person and the judge see the same thing.
+`score` judges the labeled lines (lines without a complete label are skipped and counted)
+and reports, per criterion and for `acceptable`, the judge-human agreement, Cohen's kappa
+and every disagreement with the judge's reason. The labels must come from a person: a
+model's labels would only measure two models agreeing.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/). One command installs everything, including the
@@ -133,7 +224,8 @@ uv run pytest
 ```
 
 Tests run offline against `FakeLLM`, which replays the fixtures in `tests/fixtures/llm/`.
-To also run the live test against the Anthropic API (costs money; needs credentials):
+To also run the live tests (costs money; needs `ANTHROPIC_API_KEY`, `KIMI_CODE_API_KEY` and
+`GEMINI_API_KEY`):
 
 ```bash
 SPEC2TEST_LIVE=1 uv run pytest -m live

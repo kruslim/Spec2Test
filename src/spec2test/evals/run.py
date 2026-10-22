@@ -14,7 +14,7 @@ from spec2test.evals.score import score
 from spec2test.extract import Extraction, extract, is_normative
 from spec2test.ingest import Document
 from spec2test.lint import Lint
-from spec2test.llm import LLMClient
+from spec2test.llm import LLMClient, model_name
 
 LintMode = Literal["full", "rules", "off"]
 """How an eval lints the extraction: the rules and the LLM pass, the rules only, or not
@@ -86,7 +86,3 @@ def write_report(run: EvalRun, out_dir: str | Path) -> tuple[Path, Path]:
     html.write_text(html_report(run), encoding="utf-8")
     results.write_text(run.model_dump_json(indent=2), encoding="utf-8")
     return html, results
-
-
-def model_name(llm: LLMClient) -> str:
-    return getattr(llm, "model", None) or type(llm).__name__

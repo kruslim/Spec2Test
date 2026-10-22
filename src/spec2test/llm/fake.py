@@ -69,18 +69,20 @@ class LLMCall:
 
 
 class FakeLLM(LLMClient):
-    def __init__(self, fixtures: Iterable[Fixture]) -> None:
+    def __init__(self, fixtures: Iterable[Fixture], *, model: str | None = None) -> None:
         self.fixtures = list(fixtures)
+        # Names the fake in reports; two fakes with different names count as two models.
+        self.model = model
         self.calls: list[LLMCall] = []
 
     @classmethod
-    def from_dir(cls, path: str | Path) -> FakeLLM:
+    def from_dir(cls, path: str | Path, *, model: str | None = None) -> FakeLLM:
         fixtures: list[Fixture] = []
         for file in sorted(Path(path).glob("*.json")):
             data = json.loads(file.read_text(encoding="utf-8"))
             entries = data if isinstance(data, list) else [data]
             fixtures.extend(Fixture.from_dict(entry, default_name=file.stem) for entry in entries)
-        return cls(fixtures)
+        return cls(fixtures, model=model)
 
     def generate[T: BaseModel](
         self, prompt: str, schema: type[T], *, system: str | None = None

@@ -1,0 +1,63 @@
+[
+  {
+    "name": "generate-brightness-test-case",
+    "schema": "TestCaseFields",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.1:1\"", "Write a test case"],
+    "response": {
+      "preconditions": ["Lamp at room temperature, switched off for at least [soak time in min]"],
+      "setup": [
+        "Mount the lamp at the entrance port of an integrating sphere",
+        "Connect the lamp to a bench supply set to [supply voltage in V]"
+      ],
+      "steps": [
+        "Start the photometer recording",
+        "Switch the lamp on and note the switch-on time",
+        "Record luminous flux against time for at least 5 s"
+      ],
+      "expected_result": "Luminous flux reaches at least 400 lm no later than 2.0 s after switch-on.",
+      "pass_criterion": "Luminous flux >= 400 lm at a time <= 2.0 s after switch-on; fail otherwise.",
+      "equipment": ["Integrating sphere with photometer", "Bench power supply", "Timer"]
+    }
+  },
+  {
+    "name": "generate-housing-colour-checklist",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.2:1\""],
+    "response": {
+      "inspect": "The outer surface of the lamp housing, under daylight.",
+      "pass_condition": "The housing is red."
+    }
+  },
+  {
+    "name": "generate-housing-label-checklist",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.2:2\""],
+    "response": {
+      "inspect": "The housing, for a voltage label.",
+      "pass_condition": "A label stating the operating voltage is present on the housing."
+    }
+  },
+  {
+    "name": "generate-switch-demonstration",
+    "schema": "EvidenceFields",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.3:1\""],
+    "response": {
+      "description": "An operator switches the lamp on and off using one hand only.",
+      "procedure": [
+        "Hold the lamp in one hand",
+        "Operate the switch with the same hand, on and then off"
+      ],
+      "evidence": ["Video of the operation", "Signed observation record"],
+      "acceptance_criterion": "The switch is operated on and off with one hand, with a force of no more than [maximum force in N]."
+    }
+  },
+  {
+    "name": "generate-mounting-checklist",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["\"id\": \"widget-lamp:2.5:1\""],
+    "response": {
+      "inspect": "The lamp's mounting interface, and a trial fit on a 35 mm rail or a wall bracket.",
+      "pass_condition": "The lamp mounts on a 35 mm rail or on a wall bracket."
+    }
+  }
+]

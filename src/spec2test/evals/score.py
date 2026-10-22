@@ -30,6 +30,7 @@ from spec2test.evals.models import (
 from spec2test.extract import Extraction, is_normative, section_at
 from spec2test.ingest import Document
 from spec2test.lint import Lint
+from spec2test.llm import model_family
 from spec2test.schema import Criterion, Requirement, SourceAnchor
 
 MIN_COVERAGE = 0.5
@@ -205,7 +206,7 @@ def warnings(gold: GoldSet, model: str, lint: Lint | None = None) -> list[str]:
     """What makes a score untrustworthy: the scored model grading itself, labels no person
     has checked, or flags the linter did not raise because it was off or failed."""
     out = []
-    if gold.labeler is not None and _family(gold.labeler) == _family(model):
+    if gold.labeler is not None and model_family(gold.labeler) == model_family(model):
         out.append(
             f"the extraction model {model!r} is from the same family as the gold set's "
             f"labeler {gold.labeler!r}: shared blind spots count as correct, so these scores "
@@ -468,11 +469,6 @@ def _overlap(a: SourceAnchor, b: SourceAnchor) -> tuple[float, float]:
     shorter = min(a.end - a.start, b.end - b.start)
     union = max(a.end, b.end) - min(a.start, b.start)
     return shared / shorter, shared / union
-
-
-def _family(model: str) -> str:
-    """'claude-opus-5-5' -> 'claude', 'kimi-for-coding' -> 'kimi'."""
-    return model.casefold().split("/")[-1].split("-")[0]
 
 
 def _in_scope(doc: Document, req: Requirement, scope: list[str] | None) -> bool:
