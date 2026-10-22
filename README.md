@@ -70,6 +70,60 @@ uv run spec2test lint extraction.json                # rules and LLM pass, Kimi 
 uv run spec2test lint extraction.json --rules-only   # no model calls
 ```
 
+## Generate
+
+`spec2test.generate.generate(requirements, llm, doc=doc)` writes one verification item
+per requirement, shaped by its verification method, and returns a `Generation`:
+
+| Method | Item | Fields |
+| --- | --- | --- |
+| Inspection | checklist item | what to inspect, pass condition |
+| Test | test case | preconditions, setup, steps, expected result, pass criterion, equipment |
+| Demonstration | evidence item | description, procedure, evidence to capture, acceptance criterion |
+| Analysis | evidence item | description, evidence to attach, acceptance criterion |
+
+- With the document, the model also gets each requirement's clause and the clauses it
+  refers to ("when tested in accordance with S14.1"), so a test follows the procedure
+  the spec states. Anything the spec does not give is written in [brackets], never
+  invented; testability flags from `lint` go to the model with their rewrites.
+- The item check: every limit the requirement sets must be in the pass criterion, and a
+  demonstration needs a procedure. An item that fails goes back to the model once with
+  the error, then lands in `Generation.rejected`. A requirement with no verification
+  method gets no item (`Generation.skipped`).
+
+```bash
+uv run spec2test lint extraction.json --json > lint.json
+uv run spec2test generate lint.json --doc spec.pdf            # Markdown, Kimi Code
+uv run spec2test generate lint.json --doc doc.json --json > generation.json
+```
+
+## Judge
+
+`spec2test judge generation.json` grades each item against a written rubric
+([docs/RUBRIC.md](docs/RUBRIC.md)): four pass/fail criteria (complete, faithful,
+executable, decisive), each with a reason. An item is acceptable when it passes all four.
+The report gives the pass rate of each criterion, overall and per kind of item, so
+test-case quality is its own column.
+
+A model never grades its own work: the judge defaults to `--provider anthropic` because
+Kimi is the default generator, and every run warns when the judge is from the
+generator's model family.
+
+```bash
+uv run spec2test judge generation.json --doc spec.pdf                  # Claude grades
+uv run spec2test judge generation.json --kind test_case --json         # test cases only
+```
+
+`spec2test calibrate` measures the judge against a person. Draw an ungraded sample, grade
+it by hand with the rubric, then compare: the report gives agreement and Cohen's kappa per
+criterion and for the overall verdict, and lists every disagreement with the judge's
+reason. Steps: [docs/RUBRIC.md](docs/RUBRIC.md#calibrating-the-judge).
+
+```bash
+uv run spec2test calibrate generation.json --new-sample --size 30 > sample.jsonl
+uv run spec2test calibrate sample.jsonl --doc spec.pdf
+```
+
 ## Eval
 
 `spec2test eval <corpus>` extracts from a corpus document, lints the result, scores it

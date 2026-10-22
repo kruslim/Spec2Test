@@ -167,11 +167,21 @@ class EvidenceFields(_Record):
     acceptance_criterion: str
 
 
-_FIELDS_FOR_KIND: dict[VerificationItemKind, type[_Record]] = {
+Fields = ChecklistFields | TestCaseFields | EvidenceFields
+
+FIELDS_FOR_KIND: dict[VerificationItemKind, type[Fields]] = {
     VerificationItemKind.CHECKLIST: ChecklistFields,
     VerificationItemKind.TEST_CASE: TestCaseFields,
     VerificationItemKind.EVIDENCE: EvidenceFields,
 }
+
+KIND_FOR_METHOD: dict[VerificationMethod, VerificationItemKind] = {
+    VerificationMethod.INSPECTION: VerificationItemKind.CHECKLIST,
+    VerificationMethod.TEST: VerificationItemKind.TEST_CASE,
+    VerificationMethod.DEMONSTRATION: VerificationItemKind.EVIDENCE,
+    VerificationMethod.ANALYSIS: VerificationItemKind.EVIDENCE,
+}
+"""The output each verification method renders as."""
 
 
 class VerificationItem(_Record):
@@ -184,7 +194,7 @@ class VerificationItem(_Record):
 
     @model_validator(mode="after")
     def _fields_match_kind(self) -> Self:
-        expected = _FIELDS_FOR_KIND[self.kind]
+        expected = FIELDS_FOR_KIND[self.kind]
         if not isinstance(self.fields, expected):
             raise ValueError(f"kind {self.kind.value!r} needs {expected.__name__}")
         return self

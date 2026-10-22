@@ -11,8 +11,9 @@ from spec2test.evals.models import (
     Metric,
 )
 from spec2test.evals.report import html_report, text_report
-from spec2test.evals.run import LintMode, evaluate, model_name, rescore, write_report
+from spec2test.evals.run import LintMode, evaluate, rescore, write_report
 from spec2test.evals.score import align, compare, score
+from spec2test.llm import model_name
 
 __all__ = [
     "DEFAULT_DIR",

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
-from spec2test import corpora, evals
+from pydantic import ValidationError
+
+from spec2test import corpora, evals, judge
 from spec2test.extract import Extraction, extract
+from spec2test.generate import Generation, generate, render_generation
 from spec2test.ingest import Document, UnsupportedFormatError, ingest
-from spec2test.lint import lint
+from spec2test.lint import Lint, lint
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
+from spec2test.schema import Requirement, VerificationItemKind
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,6 +56,61 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="print the whole Lint as JSON")
     p.set_defaults(run=_lint)
 
+    p = commands.add_parser("generate", help="write a verification item for each requirement")
+    p.add_argument(
+        "path",
+        type=Path,
+        help="an Extraction saved by `extract --json`, or a Lint by `lint --json`",
+    )
+    p.add_argument(
+        "--doc",
+        type=Path,
+        help="the spec, or a Document saved by `ingest --json`, to give the model each "
+        "requirement's clause and the clauses it refers to",
+    )
+    _add_llm_args(p)
+    p.add_argument("--json", action="store_true", help="print the whole Generation as JSON")
+    p.set_defaults(run=_generate)
+
+    p = commands.add_parser("judge", help="grade generated items against the rubric")
+    p.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
+    p.add_argument("--doc", type=Path, help="the spec, as for `generate --doc`")
+    p.add_argument(
+        "--kind",
+        action="append",
+        choices=[k.value for k in VerificationItemKind],
+        help="grade only items of this kind (repeatable; default: all)",
+    )
+    _add_llm_args(p, default="anthropic")
+    p.add_argument("--json", action="store_true", help="print the whole Judging as JSON")
+    p.set_defaults(run=_judge)
+
+    p = commands.add_parser("calibrate", help="report judge-vs-person agreement on a graded sample")
+    p.add_argument(
+        "path",
+        type=Path,
+        help="a sample graded by a person (JSONL), or with --new-sample a Generation to draw "
+        "one from",
+    )
+    p.add_argument(
+        "--new-sample",
+        action="store_true",
+        help="print an ungraded sample of the Generation at PATH as JSONL, to grade by hand",
+    )
+    p.add_argument("--size", type=int, help="with --new-sample: items to draw (default: all)")
+    p.add_argument("--seed", type=int, default=0, help="with --new-sample: random seed")
+    p.add_argument("--doc", type=Path, help="the spec, as for `generate --doc`")
+    p.add_argument(
+        "--rescore",
+        type=Path,
+        metavar="RESULTS",
+        help="reuse the judge's grades in a calibration saved by `calibrate --json`; no "
+        "model calls",
+    )
+    _add_llm_args(p, default="anthropic")
+    p.add_argument("--json", action="store_true", help="print the whole Calibration as JSON")
+    p.set_defaults(run=_calibrate)
+
     p = commands.add_parser("eval", help="score extraction against a labeled gold set")
     p.add_argument("corpus", help="corpus ID; its gold set is gold/CORPUS.jsonl")
     p.add_argument("--gold", type=Path, help="gold set JSONL (default: gold/CORPUS.jsonl)")
@@ -86,12 +146,12 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_llm_args(p: argparse.ArgumentParser) -> None:
+def _add_llm_args(p: argparse.ArgumentParser, default: str = "kimi-code") -> None:
     p.add_argument(
         "--provider",
         choices=["anthropic", *PRESETS],
-        default="kimi-code",
-        help="model provider (default: kimi-code)",
+        default=default,
+        help=f"model provider (default: {default})",
     )
     p.add_argument("--model", help="model ID (default: the provider's default)")
     p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
@@ -184,6 +244,91 @@ def _lint(args: argparse.Namespace) -> int:
         f"{len(flagged)} of {len(result.requirements)} requirements flagged, {flags} flags, "
         f"{len(result.rejected)} LLM flags rejected, {len(result.failed)} batches failed"
     )
+    return 1 if result.failed else 0
+
+
+def _load_requirements(path: Path) -> list[Requirement]:
+    """The records in a Lint (with their flags) or an Extraction saved as JSON."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return Lint.model_validate(data).requirements
+    except ValidationError:
+        return Extraction.model_validate(data).requirements
+
+
+def _context_doc(path: Path | None, requirements: list[Requirement]) -> Document | None:
+    """The document `--doc` names, ingested under the requirements' document ID so their
+    anchors find their clauses; a warning when none of them is from it."""
+    if path is None:
+        return None
+    ids = list(dict.fromkeys(r.source_anchor.doc for r in requirements))
+    doc = _load_document(path, ids[0] if ids else None, None)
+    if ids and doc.doc_id not in ids:
+        print(
+            f"warning: {path} is {doc.doc_id!r}, but the requirements are from "
+            f"{', '.join(map(repr, ids))}: no source clauses will be sent",
+            file=sys.stderr,
+        )
+    return doc
+
+
+def _generate(args: argparse.Namespace) -> int:
+    try:
+        requirements = _load_requirements(args.path)
+        doc = _context_doc(args.doc, requirements)
+    except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    result = generate(requirements, _llm(args), doc=doc)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(render_generation(result))
+        print(
+            f"{len(result.items)} items from {len(result.requirements)} requirements, "
+            f"{len(result.rejected)} rejected, {result.retried} retried, "
+            f"{len(result.failed)} failed, {len(result.skipped)} skipped (no method)"
+        )
+    return 1 if result.failed else 0
+
+
+def _judge(args: argparse.Namespace) -> int:
+    try:
+        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+        doc = _context_doc(args.doc, generation.requirements)
+    except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    kinds = [VerificationItemKind(k) for k in args.kind] if args.kind else None
+    result = judge.judge(generation, _llm(args), doc=doc, kinds=kinds)
+    print(result.model_dump_json(indent=2) if args.json else judge.judging_report(result))
+    return 1 if result.failed else 0
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    try:
+        if args.new_sample:
+            generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+            for line in judge.new_sample(generation, args.size, args.seed):
+                print(line.model_dump_json())
+            return 0
+        sample = judge.load_sample(args.path)
+        doc = _context_doc(args.doc, [r for line in sample.lines for r in line.requirements])
+        previous = None
+        if args.rescore is not None:
+            previous = judge.Calibration.model_validate_json(
+                args.rescore.read_text(encoding="utf-8")
+            )
+    except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        # SampleError and pydantic's ValidationError are ValueErrors too.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    llm = None if previous is not None else _llm(args)
+    result = judge.calibrate(sample, llm, doc=doc, previous=previous)
+    print(result.model_dump_json(indent=2) if args.json else judge.calibration_report(result))
     return 1 if result.failed else 0
 
 

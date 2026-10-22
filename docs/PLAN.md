@@ -150,6 +150,8 @@ Done when: each verification method renders its output type and the LLM judge sc
 Generate VerificationItems per requirement by verification method: Inspection to checklist item, Test to test case (preconditions, setup, steps, expected result, pass/fail criterion, equipment), Demonstration and Analysis to evidence items. Add an LLM judge with a written rubric and a calibration script that reports judge-vs-human agreement on a labeled sample. The judge must be a different model from the generator; warn when they share a model family, as the eval does for gold-set labelers.
 ```
 
+Status (Oct 22, 2026): built, offline only. `spec2test generate` (one item per requirement, with the requirement's clause and the clauses it references; a deterministic check that the pass criterion states every limit, one retry), `spec2test judge` (rubric in `docs/RUBRIC.md`: complete, faithful, executable, decisive, each pass/fail; pass rates per kind) and `spec2test calibrate` (agreement and Cohen's kappa per criterion against your grades). The judge defaults to Anthropic, since Kimi generates; Claude Opus is also the FMVSS 111 gold-set labeler, so switch the judge to Gemini once it is added. Not done yet: a live FMVSS 111 generation run, and a calibration sample graded by you; until then there is no judge-human agreement number to quote.
+
 ### Phase 6 — Traceability and spec diffs
 
 Done when: the matrix shows coverage gaps, and comparing two versions of a spec lists which tests must change.

@@ -1,0 +1,89 @@
+[
+  {
+    "name": "generate-brightness-retried",
+    "schema": "TestCaseFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.1:1", "failed the check"],
+    "response": {
+      "preconditions": ["Lamp at room temperature and switched off for at least [soak time in min]"],
+      "setup": [
+        "Mount the lamp in an integrating sphere",
+        "Supply the lamp at [supply voltage in V]",
+        "Ambient temperature [ambient temperature in °C]"
+      ],
+      "steps": [
+        "Start recording luminous flux at [sample rate in Hz] or faster",
+        "Switch the lamp on and note the switch-on time",
+        "Record the time at which luminous flux first reaches 400 lm"
+      ],
+      "expected_result": "Luminous flux reaches at least 400 lm within 2.0 s of switch-on.",
+      "pass_criterion": "Luminous flux ≥ 400 lm, reached ≤ 2.0 s after switch-on",
+      "equipment": ["Integrating sphere with photometer", "Regulated power supply", "Data logger"]
+    }
+  },
+  {
+    "name": "generate-brightness-missing-time-limit",
+    "schema": "TestCaseFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.1:1", "Write a test case"],
+    "response": {
+      "preconditions": ["Lamp switched off"],
+      "setup": ["Mount the lamp in an integrating sphere"],
+      "steps": ["Switch the lamp on", "Measure luminous flux"],
+      "expected_result": "The lamp is bright.",
+      "pass_criterion": "Luminous flux ≥ 400 lm",
+      "equipment": ["Integrating sphere with photometer"]
+    }
+  },
+  {
+    "name": "generate-housing-red",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.2:1", "Write a checklist item"],
+    "response": {
+      "inspect": "Colour of the outer housing, under daylight, against [colour reference]",
+      "pass_condition": "The housing is red."
+    }
+  },
+  {
+    "name": "generate-housing-label",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.2:2", "Write a checklist item"],
+    "response": {
+      "inspect": "The housing, for a label stating the voltage",
+      "pass_condition": "A voltage label is present on the housing."
+    }
+  },
+  {
+    "name": "generate-switch-demonstration",
+    "schema": "EvidenceFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.3:1", "verified by demonstration"],
+    "response": {
+      "description": "An operator switches the lamp on and off using one hand only.",
+      "procedure": [
+        "Hold the lamp in one hand, or mount it as installed",
+        "Operate the switch with the same hand, without using the other hand",
+        "Repeat for switch-off"
+      ],
+      "evidence": ["Video of the operation", "Signed observation record"],
+      "acceptance_criterion": "The switch is operated with one hand with a force of no more than [maximum force in N]."
+    }
+  },
+  {
+    "name": "generate-mounting",
+    "schema": "ChecklistFields",
+    "prompt_contains": ["Requirement: widget-lamp:2.5:1", "Write a checklist item"],
+    "response": {
+      "inspect": "The lamp's mounting interface, fitted to a 35 mm rail or to a wall bracket",
+      "pass_condition": "The lamp mounts on a 35 mm rail, or on a wall bracket."
+    }
+  },
+  {
+    "name": "generate-bracket-analysis",
+    "schema": "EvidenceFields",
+    "prompt_contains": ["Requirement: bracket:3.1:1", "verified by analysis"],
+    "response": {
+      "description": "Structural calculation of the bracket under a static load.",
+      "procedure": [],
+      "evidence": ["Stress calculation or FEA report showing peak stress below yield at 50 N"],
+      "acceptance_criterion": "Peak stress at a 50 N static load is below the yield strength of [bracket material]."
+    }
+  }
+]

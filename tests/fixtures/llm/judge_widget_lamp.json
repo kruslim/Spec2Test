@@ -1,0 +1,57 @@
+[
+  {
+    "name": "judge-brightness",
+    "schema": "Grades",
+    "prompt_contains": ["Item: widget-lamp:2.1:1:test_case"],
+    "response": {
+      "complete": {"reason": "Both limits, 400 lm and 2.0 s, are in the pass criterion.", "passed": true},
+      "faithful": {"reason": "Values match; the supply voltage and temperature are bracketed.", "passed": true},
+      "executable": {"reason": "Setup, steps and equipment are concrete.", "passed": true},
+      "decisive": {"reason": "Both limits are compared in the requirement's direction.", "passed": true}
+    }
+  },
+  {
+    "name": "judge-housing-red",
+    "schema": "Grades",
+    "prompt_contains": ["Item: widget-lamp:2.2:1:checklist"],
+    "response": {
+      "complete": {"reason": "Checks the colour.", "passed": true},
+      "faithful": {"reason": "Nothing invented.", "passed": true},
+      "executable": {"reason": "Says what to look at and under which light.", "passed": true},
+      "decisive": {"reason": "Red against a colour reference.", "passed": true}
+    }
+  },
+  {
+    "name": "judge-housing-label",
+    "schema": "Grades",
+    "prompt_contains": ["Item: widget-lamp:2.2:2:checklist"],
+    "response": {
+      "complete": {"reason": "Checks the label.", "passed": true},
+      "faithful": {"reason": "Nothing invented.", "passed": true},
+      "executable": {"reason": "Does not say where on the housing the label is to be found.", "passed": false},
+      "decisive": {"reason": "Present or absent.", "passed": true}
+    }
+  },
+  {
+    "name": "judge-switch",
+    "schema": "Grades",
+    "prompt_contains": ["Item: widget-lamp:2.3:1:evidence"],
+    "response": {
+      "complete": {"reason": "Covers switch-on and switch-off.", "passed": true},
+      "faithful": {"reason": "The force limit is bracketed, not invented.", "passed": true},
+      "executable": {"reason": "The procedure is concrete.", "passed": true},
+      "decisive": {"reason": "The [maximum force in N] limit is not filled in.", "passed": false}
+    }
+  },
+  {
+    "name": "judge-mounting",
+    "schema": "Grades",
+    "prompt_contains": ["Item: widget-lamp:2.5:1:checklist"],
+    "response": {
+      "complete": {"reason": "Either mounting option passes, as the requirement says.", "passed": true},
+      "faithful": {"reason": "35 mm as in the requirement.", "passed": true},
+      "executable": {"reason": "Says what to fit it to.", "passed": true},
+      "decisive": {"reason": "Mounts or does not.", "passed": true}
+    }
+  }
+]
