@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from html import escape
 
-from spec2test.evals.models import DESCRIPTIONS, EvalRun, Failure, FailureCategory, Metric
+from spec2test.evals.models import (
+    DESCRIPTIONS,
+    EvalRun,
+    Failure,
+    FailureCategory,
+    FlagCounts,
+    Metric,
+)
 from spec2test.schema import Requirement
 
 _METHODS = ["inspection", "test", "demonstration", "analysis"]
@@ -17,6 +24,19 @@ def text_report(run: EvalRun) -> str:
     lines.append(f"{'metric':{width}}   {'value':>6}  {'n':>9}")
     for m in run.metrics:
         lines.append(f"{m.name:{width}}   {_percent(m):>6}  {_fraction(m):>9}")
+    if run.flags:
+        width = max(len("flag kind"), *(len(c.kind) for c in run.flags))
+        lines += [
+            "",
+            f"{'flag kind':{width}}   {'caught':>6}  {'false':>5}  {'missed':>6}  "
+            f"{'precision':>9}  {'recall':>6}",
+        ]
+        for c in run.flags:
+            precision, recall = _flag_metrics(c)
+            lines.append(
+                f"{c.kind:{width}}   {c.true_positives:>6}  {c.false_positives:>5}  "
+                f"{c.false_negatives:>6}  {_percent(precision):>9}  {_percent(recall):>6}"
+            )
     counts = _category_counts(run.failures)
     if counts:
         width = max(len(c.value) for c in counts)
@@ -88,7 +108,13 @@ def _run_table(run: EvalRun) -> str:
         ),
         ("Rejected drafts", str(len(x.rejected))),
         ("Failed sections", str(len(x.failed_sections))),
+        ("Linter", _linter(run)),
     ]
+    if run.lint is not None and run.lint.llm_pass:
+        rows += [
+            ("Rejected LLM flags", str(len(run.lint.rejected))),
+            ("Failed lint batches", str(len(run.lint.failed))),
+        ]
     cells = "".join(f"<tr><th>{escape(k)}</th><td>{escape(v)}</td></tr>" for k, v in rows)
     return f"<table class=kv>{cells}</table>"
 
@@ -144,13 +170,29 @@ def _flags_table(run: EvalRun) -> str:
         return "<p class=note>No testability flags on the aligned pairs, gold or extracted.</p>"
     rows = "".join(
         f"<tr><td><code>{escape(c.kind)}</code></td><td class=num>{c.true_positives}</td>"
-        f"<td class=num>{c.false_positives}</td><td class=num>{c.false_negatives}</td></tr>"
+        f"<td class=num>{c.false_positives}</td><td class=num>{c.false_negatives}</td>"
+        + "".join(f"<td class=num>{_percent(m)}</td>" for m in _flag_metrics(c))
+        + "</tr>"
         for c in run.flags
     )
     return (
-        "<table><thead><tr><th>Kind</th><th>Caught</th><th>False</th><th>Missed</th></tr>"
-        f"</thead><tbody>{rows}</tbody></table>"
+        "<table><thead><tr><th>Kind</th><th>Caught</th><th>False</th><th>Missed</th>"
+        f"<th>Precision</th><th>Recall</th></tr></thead><tbody>{rows}</tbody></table>"
     )
+
+
+def _flag_metrics(c: FlagCounts) -> tuple[Metric, Metric]:
+    tp = c.true_positives
+    return (
+        Metric(name=f"{c.kind} precision", numerator=tp, denominator=tp + c.false_positives),
+        Metric(name=f"{c.kind} recall", numerator=tp, denominator=tp + c.false_negatives),
+    )
+
+
+def _linter(run: EvalRun) -> str:
+    if run.lint is None:
+        return "off"
+    return "rules and LLM pass" if run.lint.llm_pass else "rules only"
 
 
 def _failures_table(

@@ -7,6 +7,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from spec2test.extract import Extraction
+from spec2test.lint import Lint
 from spec2test.schema import Requirement
 
 
@@ -132,8 +133,13 @@ class EvalRun(_Record):
         default_factory=list, description="Why these numbers may not mean what they seem."
     )
     gold: list[Requirement]
-    predicted: list[Requirement] = Field(description="Extracted records inside the scope.")
+    predicted: list[Requirement] = Field(
+        description="Extracted records inside the scope, with their testability flags."
+    )
     extraction: Extraction = Field(description="The whole extraction, for rescoring.")
+    lint: Lint | None = Field(
+        default=None, description="The linter's output, for rescoring; None when not linted."
+    )
     matches: list[Match]
     failures: list[Failure]
     metrics: list[Metric]

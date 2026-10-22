@@ -140,6 +140,8 @@ Done when: flag precision/recall is reported in the eval output.
 Add a testability linter: deterministic rules (vague terms such as "adequate" or "as appropriate", missing units, missing conditions, compound requirements, unbounded terms) plus an LLM pass for subtler ambiguity. Each flag carries a reason and a suggested rewrite. Wire flags into the eval harness.
 ```
 
+Status (Oct 21, 2026): built. `spec2test lint` and `spec2test eval --lint full|rules|off`; eval reports flag precision/recall overall and per kind, and rescoring re-runs the rules for free. Live FMVSS 111 run (Kimi, rules and LLM pass): 100% flag recall (7/7), 38.9% flag precision (7/18). The rules raised 9 kind-flags with 7 right; the LLM pass's false flags are mostly arguable gaps the gold set does not label ("backing event has ended" undefined, "permanently and indelibly"). The FMVSS 111 gold set flags only `vague_term`; decide whether those gaps belong in it.
+
 ### Phase 5 — Generation
 
 Done when: each verification method renders its output type and the LLM judge scores test-case quality.

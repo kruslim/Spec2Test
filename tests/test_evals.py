@@ -1,7 +1,7 @@
 """The eval harness: gold sets, alignment, the failure taxonomy, metrics and reports.
 
 Scored against the invented widget lamp spec (tests/conftest.py), its gold set in
-tests/fixtures/gold/ and the canned extraction in tests/fixtures/llm/.
+tests/fixtures/gold/ and the canned extraction and lint answers in tests/fixtures/llm/.
 """
 
 import json
@@ -39,6 +39,7 @@ from spec2test.evals.score import (
     TYPE_ACCURACY,
 )
 from spec2test.extract import Extraction, SectionFailure, locate
+from spec2test.lint import FlagDrafts
 from spec2test.llm import OpenAICompatLLM
 from spec2test.schema import Criterion, Requirement, SourceAnchor, TestabilityFlag
 
@@ -362,14 +363,13 @@ def test_eval_scores_the_canned_extraction(run, fake_llm):
         TYPE_ACCURACY: (4, 5),
         STRENGTH_ACCURACY: (5, 5),
         METHOD_ACCURACY: (5, 5),
-        FLAG_PRECISION: (0, 0),
-        FLAG_RECALL: (0, 1),
+        FLAG_PRECISION: (1, 2),
+        FLAG_RECALL: (1, 1),
     }
-    assert run.metric(FLAG_PRECISION).value is None
     assert categories(run) == [
         (F.CITATION_REJECTED, "wl-2.4-1", None),
         (F.CRITERION_EXTRA, "wl-2.5-1", "widget-lamp:2.5:1"),
-        (F.FLAG_MISSED, "wl-2.3-1", "widget-lamp:2.3:1"),
+        (F.FLAG_FALSE, "wl-2.1-1", "widget-lamp:2.1:1"),
         (F.SECTION_FAILED, "wl-2.6-1", None),
         (F.WRONG_TYPE, "wl-2.2-2", "widget-lamp:2.2:2"),
     ]
@@ -378,7 +378,13 @@ def test_eval_scores_the_canned_extraction(run, fake_llm):
         "inspection": {"inspection": 3},
         "demonstration": {"demonstration": 1},
     }
-    assert [(c.kind, c.false_negatives) for c in run.flags] == [("vague_term", 1)]
+    assert [(c.kind, c.true_positives, c.false_positives) for c in run.flags] == [
+        ("missing_condition", 0, 1),
+        ("vague_term", 1, 0),
+    ]
+    # The LLM pass's flag that quotes words not in the requirement was rejected.
+    assert run.lint is not None and run.lint.llm_pass
+    assert [r.draft.phrase for r in run.lint.rejected] == ["dazzling glare"]
     # Only the scope's sections with normative wording were sent.
     assert not any("Section: 1.1" in c.prompt for c in fake_llm.calls)
     assert run.model == "FakeLLM" and run.seconds is not None and run.pages == 2
@@ -397,6 +403,38 @@ def test_rescoring_a_saved_run_calls_no_model(doc, gold, run):
     assert again.metrics == run.metrics
     assert (again.model, again.seconds) == (run.model, run.seconds)
     assert rescore(doc, gold, run.extraction, corpus="x").model == "saved extraction"
+
+
+def test_rescoring_reruns_the_rules_and_keeps_the_saved_llm_flags(doc, gold, run):
+    saved = EvalRun.model_validate_json(run.model_dump_json())
+    assert rescore(doc, gold, saved, corpus="w").flags == run.flags
+
+    rules_only = rescore(doc, gold, saved, corpus="w", lint="rules")
+    assert rules_only.lint is not None and not rules_only.lint.llm_pass
+    assert rules_only.metric(FLAG_RECALL).numerator == 0  # 'one hand' needs the LLM pass
+
+    # A run saved before the linter existed has no lint: the rules still run.
+    old = saved.model_copy(update={"lint": None})
+    assert rescore(doc, gold, old, corpus="w").lint.llm_flags == {}
+
+
+def test_eval_lint_modes(doc, gold, fake_llm):
+    rules = evaluate(doc, gold, fake_llm, corpus="w", lint="rules")
+    assert all(c.schema is not FlagDrafts for c in fake_llm.calls)
+    assert rules.lint is not None and rules.lint.llm_flags == {}
+
+    off = evaluate(doc, gold, fake_llm, corpus="w", lint="off")
+    assert off.lint is None
+    assert off.warnings == [
+        "the extraction was not linted: flag precision and recall measure nothing"
+    ]
+
+
+def test_failed_lint_batches_are_a_warning(doc, gold, fake_llm):
+    fake_llm.fixtures = [f for f in fake_llm.fixtures if f.schema != "FlagDrafts"]
+    run = evaluate(doc, gold, fake_llm, corpus="w")
+    assert len(run.lint.failed) == 4  # sections 2.1, 2.2, 2.3 and 2.5
+    assert run.warnings == ["the LLM lint pass failed for 4 batch(es); flag recall is understated"]
 
 
 def test_scoring_a_model_against_its_own_labels_warns(doc):
@@ -425,6 +463,8 @@ def test_html_report_is_self_contained_and_escaped(doc, gold, run):
         assert f"<h2>{heading}</h2>" in page
     assert "<td>extraction recall</td><td class=num>71.4%</td><td class=num>5/7</td>" in page
     assert "id='section_failed'" in page
+    assert "<th>Linter</th><td>rules and LLM pass</td>" in page
+    assert "<td><code>vague_term</code></td>" in page and "<th>Recall</th>" in page
     assert "src=" not in page and "href='http" not in page
 
     evil = run.model_copy(update={"corpus": "<script>alert(1)</script>"})
@@ -441,7 +481,8 @@ def test_cli_eval_prints_the_table_and_writes_the_report(doc, tmp_path, capsys):
     printed = capsys.readouterr().out
     assert printed.startswith("widget-lamp: 7 gold, 5 extracted, 5 aligned, 2 pages")
     assert re.search(r"^extraction recall +71\.4% +5/7$", printed, re.M)
-    assert re.search(r"^flag precision +n/a +0/0$", printed, re.M)
+    assert re.search(r"^flag precision +50\.0% +1/2$", printed, re.M)
+    assert re.search(r"^vague_term +1 +0 +0 +100\.0% +100\.0%$", printed, re.M)
     assert re.search(r"^section_failed +1$", printed, re.M)
     assert f"report:  {out / 'report.html'}" in printed
     assert "Failure taxonomy" in (out / "report.html").read_text(encoding="utf-8")

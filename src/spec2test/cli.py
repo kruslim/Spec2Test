@@ -9,8 +9,9 @@ from datetime import datetime
 from pathlib import Path
 
 from spec2test import corpora, evals
-from spec2test.extract import extract
+from spec2test.extract import Extraction, extract
 from spec2test.ingest import Document, UnsupportedFormatError, ingest
+from spec2test.lint import lint
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
 
 
@@ -41,6 +42,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="print the whole Extraction as JSON")
     p.set_defaults(run=_extract)
 
+    p = commands.add_parser("lint", help="flag requirements that are hard to verify")
+    p.add_argument("path", type=Path, help="an Extraction saved by `extract --json`")
+    _add_llm_args(p)
+    p.add_argument(
+        "--rules-only", action="store_true", help="run the deterministic rules only; no model"
+    )
+    p.add_argument("--json", action="store_true", help="print the whole Lint as JSON")
+    p.set_defaults(run=_lint)
+
     p = commands.add_parser("eval", help="score extraction against a labeled gold set")
     p.add_argument("corpus", help="corpus ID; its gold set is gold/CORPUS.jsonl")
     p.add_argument("--gold", type=Path, help="gold set JSONL (default: gold/CORPUS.jsonl)")
@@ -57,6 +67,13 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         metavar="RESULTS",
         help="score the extraction saved in a previous run's results.json; no model calls",
+    )
+    p.add_argument(
+        "--lint",
+        choices=["full", "rules", "off"],
+        default="full",
+        help="lint with the rules and the LLM pass (default), the rules only, or not at all; "
+        "with --rescore, 'full' keeps the saved run's LLM flags",
     )
     p.add_argument("--out", type=Path, help="report folder (default: eval-reports/CORPUS/TIME)")
     p.set_defaults(run=_eval)
@@ -140,6 +157,36 @@ def _extract(args: argparse.Namespace) -> int:
     return 1 if result.failed_sections else 0
 
 
+def _lint(args: argparse.Namespace) -> int:
+    try:
+        extraction = Extraction.model_validate_json(args.path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    result = lint(extraction.requirements, None if args.rules_only else _llm(args))
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 1 if result.failed else 0
+    flagged = [r for r in result.requirements if r.testability_flags]
+    for r in flagged:
+        print(f"{r.id}  {r.text}")
+        for f in r.testability_flags:
+            print(f"    {f.kind.value}: {f.reason}")
+            if f.suggested_rewrite:
+                print(f"        rewrite: {f.suggested_rewrite}")
+    for rej in result.rejected:
+        print(f"rejected  {rej.draft.requirement_id}  {rej.draft.kind.value}: {rej.error}")
+    for f in result.failed:
+        print(f"failed  {f.section or '-'}  {f.error}")
+    flags = sum(len(r.testability_flags) for r in result.requirements)
+    print(
+        f"{len(flagged)} of {len(result.requirements)} requirements flagged, {flags} flags, "
+        f"{len(result.rejected)} LLM flags rejected, {len(result.failed)} batches failed"
+    )
+    return 1 if result.failed else 0
+
+
 def _eval(args: argparse.Namespace) -> int:
     try:
         if args.doc is not None:
@@ -161,9 +208,9 @@ def _eval(args: argparse.Namespace) -> int:
         return 2
 
     if previous is not None:
-        run = evals.rescore(doc, gold, previous, corpus=args.corpus)
+        run = evals.rescore(doc, gold, previous, corpus=args.corpus, lint=args.lint)
     else:
-        run = evals.evaluate(doc, gold, _llm(args), corpus=args.corpus)
+        run = evals.evaluate(doc, gold, _llm(args), corpus=args.corpus, lint=args.lint)
     out = args.out or Path("eval-reports", args.corpus, datetime.now().strftime("%Y%m%d-%H%M%S"))
     html, results = evals.write_report(run, out)
     print(evals.text_report(run))

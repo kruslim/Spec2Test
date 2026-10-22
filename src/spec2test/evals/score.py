@@ -29,6 +29,7 @@ from spec2test.evals.models import (
 )
 from spec2test.extract import Extraction, is_normative, section_at
 from spec2test.ingest import Document
+from spec2test.lint import Lint
 from spec2test.schema import Criterion, Requirement, SourceAnchor
 
 MIN_COVERAGE = 0.5
@@ -90,14 +91,20 @@ def score(
     corpus: str,
     model: str,
     seconds: float | None = None,
+    lint: Lint | None = None,
 ) -> EvalRun:
-    """Align `extraction` with `gold` inside the gold set's scope and compute the metrics."""
+    """Align `extraction` with `gold` inside the gold set's scope and compute the metrics.
+
+    With `lint`, the extracted records are scored as linted, testability flags included;
+    without it they carry no flags, and flag precision and recall measure nothing.
+    """
     if extraction.doc_id != doc.doc_id or gold.doc_id != doc.doc_id:
         raise ValueError(
             f"document mismatch: gold {gold.doc_id!r}, extraction {extraction.doc_id!r}, "
             f"document {doc.doc_id!r}"
         )
-    predicted = [r for r in extraction.requirements if _in_scope(doc, r, gold.scope)]
+    records = lint.requirements if lint is not None else extraction.requirements
+    predicted = [r for r in records if _in_scope(doc, r, gold.scope)]
     matches = align(gold.requirements, predicted)
     gold_by_id = {g.id: g for g in gold.requirements}
     pred_by_id = {p.id: p for p in predicted}
@@ -181,10 +188,11 @@ def score(
         scope=gold.scope,
         gold_labeler=gold.labeler,
         gold_reviewed=gold.reviewed,
-        warnings=warnings(gold, model),
+        warnings=warnings(gold, model, lint),
         gold=gold.requirements,
         predicted=predicted,
         extraction=extraction,
+        lint=lint,
         matches=matches,
         failures=failures,
         metrics=metrics,
@@ -193,9 +201,9 @@ def score(
     )
 
 
-def warnings(gold: GoldSet, model: str) -> list[str]:
-    """What makes a score untrustworthy: the scored model grading itself, or labels no
-    person has checked."""
+def warnings(gold: GoldSet, model: str, lint: Lint | None = None) -> list[str]:
+    """What makes a score untrustworthy: the scored model grading itself, labels no person
+    has checked, or flags the linter did not raise because it was off or failed."""
     out = []
     if gold.labeler is not None and _family(gold.labeler) == _family(model):
         out.append(
@@ -206,6 +214,12 @@ def warnings(gold: GoldSet, model: str) -> list[str]:
     if not gold.reviewed:
         who = f"labeled by {gold.labeler}" if gold.labeler else "labeler unknown"
         out.append(f"the gold set ({who}) has not been reviewed by a person")
+    if lint is None and any(g.testability_flags for g in gold.requirements):
+        out.append("the extraction was not linted: flag precision and recall measure nothing")
+    elif lint is not None and lint.failed:
+        out.append(
+            f"the LLM lint pass failed for {len(lint.failed)} batch(es); flag recall is understated"
+        )
     return out
 
 

@@ -32,7 +32,10 @@ and `end`:
 - `conditions`: free text; scored by similarity, not equality.
 - `verification_method`: leave it out only if you cannot decide; that line is then left
   out of method accuracy.
-- `testability_flags`: kind and a short reason for each.
+- `testability_flags`: kind and a short reason for each. Eval scores the kinds raised on
+  each aligned pair, so a requirement left without a flag counts as testable: label every
+  kind that applies (`vague_term`, `missing_unit`, `missing_condition`, `compound`,
+  `unbounded`), not only the most obvious one.
 
 The `id` is yours; it only has to be unique in the file.
 

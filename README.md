@@ -47,17 +47,41 @@ endpoint. It sends the JSON Schema in the prompt and validates the reply with Py
 The gold-set source documents live in `corpora/`, git-ignored; see
 [corpora/README.md](corpora/README.md).
 
+## Lint
+
+`spec2test.lint.lint(requirements, llm)` flags what makes each requirement hard to
+verify and returns a `Lint`: the records with their `testability_flags` filled in. Every
+flag has a kind (`vague_term`, `missing_unit`, `missing_condition`, `compound`,
+`unbounded`), a reason and a suggested rewrite that marks what the author must supply in
+[brackets].
+
+- Deterministic rules run first (`spec2test.lint.rules`): vague words ("adequate",
+  "stable", "sharp"), escape clauses ("as appropriate", "if possible"), open-ended lists
+  ("etc."), "and/or", unbounded wording ("minimise", "as low as possible", "never"),
+  numbers with no unit, tested levels with no test conditions, and more than one "shall"
+  in one record.
+- An LLM pass then gets one section's records at a time, with the rule flags, and returns
+  only what the rules missed. Each flag must quote words from its own requirement; one
+  that does not lands in `Lint.rejected`.
+
+```bash
+uv run spec2test extract spec.pdf --json > extraction.json
+uv run spec2test lint extraction.json                # rules and LLM pass, Kimi Code
+uv run spec2test lint extraction.json --rules-only   # no model calls
+```
+
 ## Eval
 
-`spec2test eval <corpus>` extracts from a corpus document, scores the result against its
-labeled gold set in `gold/<corpus>.jsonl` (format: [gold/README.md](gold/README.md)),
-prints the metrics and writes `report.html` and `results.json` to
-`eval-reports/<corpus>/<time>/`.
+`spec2test eval <corpus>` extracts from a corpus document, lints the result, scores it
+against its labeled gold set in `gold/<corpus>.jsonl` (format:
+[gold/README.md](gold/README.md)), prints the metrics and writes `report.html` and
+`results.json` to `eval-reports/<corpus>/<time>/`.
 
 ```bash
 uv run spec2test eval fmvss-111                     # live, Kimi Code
 uv run spec2test eval fmvss-111 --fake DIR          # offline, FakeLLM fixtures
 uv run spec2test eval fmvss-111 --rescore RESULTS   # score a saved run again, no model calls
+uv run spec2test eval fmvss-111 --lint rules        # lint with the rules only (or: off)
 uv run spec2test eval widget-lamp --doc doc.json --gold g.jsonl   # any document and gold set
 ```
 
@@ -73,6 +97,10 @@ the shorter quote, and each record aligns at most once. The metrics:
 | Type / strength accuracy | aligned pairs | equal |
 | Method accuracy | aligned pairs with a gold method | equal |
 | Flag precision / recall | testability flag kinds on aligned pairs | same kind raised |
+
+Flag precision and recall are also reported per kind. Rescoring runs the lint rules again,
+so a rule change can be measured on a saved run for free; the saved run's LLM flags are
+kept.
 
 Every miss gets a failure category: why a gold record was missed (`section_failed`,
 `section_skipped`, `merged`, `span_mismatch`, `citation_rejected`, `not_extracted`), why

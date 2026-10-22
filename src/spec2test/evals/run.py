@@ -1,17 +1,24 @@
-"""Run extraction on a labeled document, score it, and write the report."""
+"""Run extraction and the linter on a labeled document, score it, and write the report."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from time import perf_counter
+from typing import Literal
 
+from spec2test import lint as linter
 from spec2test.evals.gold import GoldSet, in_scope
 from spec2test.evals.models import EvalRun
 from spec2test.evals.report import html_report
 from spec2test.evals.score import score
 from spec2test.extract import Extraction, extract, is_normative
 from spec2test.ingest import Document
+from spec2test.lint import Lint
 from spec2test.llm import LLMClient
+
+LintMode = Literal["full", "rules", "off"]
+"""How an eval lints the extraction: the rules and the LLM pass, the rules only, or not
+at all. When rescoring, "full" keeps the LLM flags the saved run has."""
 
 
 def evaluate(
@@ -21,8 +28,9 @@ def evaluate(
     *,
     corpus: str,
     model: str | None = None,
+    lint: LintMode = "full",
 ) -> EvalRun:
-    """Extract from the sections the gold set covers, then score against it."""
+    """Extract from the sections the gold set covers, lint the result, then score it."""
     sections = None
     if gold.scope is not None:
         sections = [
@@ -31,20 +39,43 @@ def evaluate(
     started = perf_counter()
     extraction = extract(doc, llm, sections=sections)
     seconds = perf_counter() - started
+    linted = None
+    if lint != "off":
+        linted = linter.lint(extraction.requirements, llm if lint == "full" else None)
     return score(
-        gold, extraction, doc, corpus=corpus, model=model or model_name(llm), seconds=seconds
+        gold,
+        extraction,
+        doc,
+        corpus=corpus,
+        model=model or model_name(llm),
+        seconds=seconds,
+        lint=linted,
     )
 
 
 def rescore(
-    doc: Document, gold: GoldSet, previous: EvalRun | Extraction, *, corpus: str
+    doc: Document,
+    gold: GoldSet,
+    previous: EvalRun | Extraction,
+    *,
+    corpus: str,
+    lint: LintMode = "full",
 ) -> EvalRun:
-    """Score a saved extraction again, without calling a model: after relabeling, say."""
+    """Score a saved extraction again, without calling a model: after relabeling, say.
+
+    The rules run again, so a rule change shows up too; "full" keeps the LLM flags the
+    saved run has, if any.
+    """
     if isinstance(previous, EvalRun):
         model, seconds, extraction = previous.model, previous.seconds, previous.extraction
+        saved = previous.lint
     else:
-        model, seconds, extraction = "saved extraction", None, previous
-    return score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds)
+        model, seconds, extraction, saved = "saved extraction", None, previous, None
+    linted = None
+    if lint != "off":
+        keep = saved if lint == "full" and saved is not None else Lint()
+        linted = linter.relint(extraction.requirements, keep)
+    return score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds, lint=linted)
 
 
 def write_report(run: EvalRun, out_dir: str | Path) -> tuple[Path, Path]:

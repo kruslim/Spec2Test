@@ -1,0 +1,46 @@
+[
+  {
+    "name": "lint-switch",
+    "schema": "FlagDrafts",
+    "prompt_contains": ["Section: 2.3"],
+    "response": {
+      "flags": [
+        {
+          "requirement_id": "widget-lamp:2.3:1",
+          "kind": "vague_term",
+          "phrase": "operable with one hand",
+          "reason": "'operable with one hand' sets no force, reach or time limit.",
+          "suggested_rewrite": "The switch shall be operable with one hand with a force of no more than [maximum force in N]."
+        }
+      ]
+    }
+  },
+  {
+    "name": "lint-brightness",
+    "schema": "FlagDrafts",
+    "prompt_contains": ["Section: 2.1"],
+    "response": {
+      "flags": [
+        {
+          "requirement_id": "widget-lamp:2.1:1",
+          "kind": "missing_condition",
+          "phrase": "switch-on",
+          "reason": "Light output depends on supply voltage and ambient temperature, and neither is stated.",
+          "suggested_rewrite": "The lamp shall emit at least 400 lm within 2.0 s of switch-on at [supply voltage in V] and [ambient temperature in °C]."
+        },
+        {
+          "requirement_id": "widget-lamp:2.1:1",
+          "kind": "vague_term",
+          "phrase": "dazzling glare",
+          "reason": "Not in the requirement: the lint check rejects it.",
+          "suggested_rewrite": "-"
+        }
+      ]
+    }
+  },
+  {
+    "name": "lint-nothing-to-add",
+    "schema": "FlagDrafts",
+    "response": {"flags": []}
+  }
+]
