@@ -281,9 +281,15 @@ def test_a_criterion_parameter_rename_is_not_a_change():
 
 def test_cli_trace_and_diff(requirements, revision_2, generation, tmp_path, capsys):
     old, new, gen = tmp_path / "old.json", tmp_path / "new.json", tmp_path / "gen.json"
-    old.write_text(Extraction(doc_id="widget-lamp", requirements=requirements).model_dump_json())
-    new.write_text(Extraction(doc_id="widget-lamp", requirements=revision_2).model_dump_json())
-    gen.write_text(generation.model_dump_json())
+    old.write_text(
+        Extraction(doc_id="widget-lamp", requirements=requirements).model_dump_json(),
+        encoding="utf-8",
+    )
+    new.write_text(
+        Extraction(doc_id="widget-lamp", requirements=revision_2).model_dump_json(),
+        encoding="utf-8",
+    )
+    gen.write_text(generation.model_dump_json(), encoding="utf-8")
 
     assert cli.main(["trace", str(gen)]) == 0
     assert "5 covered, 0 skipped, 0 gaps" in capsys.readouterr().out
