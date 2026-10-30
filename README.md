@@ -206,6 +206,65 @@ and reports, per criterion and for `acceptable`, the judge-human agreement, Cohe
 and every disagreement with the judge's reason. The labels must come from a person: a
 model's labels would only measure two models agreeing.
 
+## Trace
+
+`spec2test.trace.trace(generation)` builds the traceability matrix: one row per
+requirement with the items that verify it, and why it has none. No model is called.
+
+| Coverage | Meaning | A gap? |
+| --- | --- | --- |
+| `covered` | at least one item verifies it | no |
+| `skipped` | a permission or definition; it obliges nothing | no |
+| `unclassified` | no verification method, so never sent | yes |
+| `rejected` | its item failed the check, even after a retry | yes |
+| `failed` | the generation call failed | yes |
+| `missing` | no item, and generation has no record of why | yes |
+
+The matrix also lists items of the wrong kind for their requirement's method (a checklist
+item for a demonstration) and orphan items, which verify no requirement in the set. Pass
+`--requirements` to trace a generation's items to another set of records, such as a newer
+extraction, and see which items are left orphaned.
+
+```bash
+uv run spec2test trace generation.json                     # matrix, gaps, orphans, coverage
+uv run spec2test trace generation.json --csv > matrix.csv  # one row per requirement-item link
+uv run spec2test trace generation.json --requirements new-extraction.json
+```
+
+Coverage is items over the requirements that oblige something (skipped ones are left
+out). `trace` exits with 1 when there is a gap or an orphan, so a script can stop on it.
+
+### Spec diffs
+
+`spec2test.trace.diff(old, new, items=generation)` compares the requirements extracted from
+two versions of a spec and lists, for each change, the old items it affects. Records pair
+across versions by source quote (difflib similarity of at least 0.6), then same section,
+then the more similar requirement text, which tells apart the records of a split compound
+requirement; ids are not used, because inserting a requirement shifts the ids after it.
+
+| Change | When | What it asks of the old items |
+| --- | --- | --- |
+| `added` | no old record pairs with it | `write` one, if it obliges something |
+| `removed` | no new record pairs with it | `retire` them |
+| `changed` | the source quote differs | `update` them |
+| `restated` | same quote, but the extraction reads it differently (text, type, strength, criteria, conditions or method) | `review` them |
+| `unchanged` | same quote and reading; it may have moved section or id | `relink` them when its id changed |
+
+The quote decides between `changed` and `restated` because it is the spec's own words,
+the same on every run; the other fields are a model's reading of them, so two extraction
+runs over the same words can differ there. A requirement that turns into a permission
+retires its items. Criteria compare by comparator, value, unit and tolerance, ignoring
+the free-text parameter name, as the eval does.
+
+```bash
+uv run spec2test diff rev-a/extraction.json rev-b/extraction.json                # changes only
+uv run spec2test diff rev-a/extraction.json rev-b/extraction.json --items rev-a/generation.json
+uv run spec2test diff A.json B.json --all --json                                  # everything
+```
+
+Both inputs are an Extraction, a Lint or an eval run's `results.json`. Extract both
+versions with the same `--doc-id` so unchanged requirements keep their ids.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/). One command installs everything, including the

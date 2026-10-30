@@ -167,6 +167,8 @@ Done when: the matrix shows coverage gaps, and comparing two versions of a spec 
 Build a traceability matrix (requirement to verification items), with coverage gaps and orphan items. Add spec revision diffing: given two versions of a document, report added, removed and changed requirements and the verification items each change affects.
 ```
 
+Status (Oct 30, 2026): built. `spec2test trace` prints the matrix (requirement to items), its gaps (unclassified, rejected, failed or missing items; permissions and definitions are skipped, not gaps), items of the wrong kind for their method and orphan items, plus coverage over the requirements that oblige something; `--csv` writes one row per link. `spec2test diff OLD NEW --items GENERATION` pairs records across versions by source quote and lists added, removed, changed (quote differs) and restated (same quote, different extraction) requirements, and for each old item whether to write, retire, update, review or relink it. No model calls. Tested offline on an invented revision of the widget lamp spec; nothing measured on FMVSS 111 yet, since it has one public revision in the corpora and no saved generation is in the repo.
+
 ### Phase 7 — Review UI
 
 Done when: a user can upload a spec, review items next to the highlighted source, and accept, edit or reject each one.

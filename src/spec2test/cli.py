@@ -27,6 +27,7 @@ from spec2test.judge import (
 from spec2test.lint import Lint, lint
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
 from spec2test.schema import Requirement
+from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -133,6 +134,30 @@ def _parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--json", action="store_true", help="print the whole Calibration as JSON")
     s.set_defaults(run=_calibrate_score)
+
+    p = commands.add_parser("trace", help="trace requirements to items; list gaps and orphans")
+    p.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
+    p.add_argument(
+        "--requirements",
+        type=Path,
+        help="trace the items to these requirements instead of the generation's own (an "
+        "Extraction, a Lint or an eval run's results.json), e.g. a newer extraction",
+    )
+    out = p.add_mutually_exclusive_group()
+    out.add_argument("--json", action="store_true", help="print the whole Matrix as JSON")
+    out.add_argument("--csv", action="store_true", help="print the matrix as CSV")
+    p.set_defaults(run=_trace)
+
+    p = commands.add_parser(
+        "diff", help="compare two versions of a spec; list the items each change affects"
+    )
+    p.add_argument("old", type=Path, help="the old version's requirements (an Extraction, a "
+                   "Lint or an eval run's results.json)")  # fmt: skip
+    p.add_argument("new", type=Path, help="the new version's requirements, likewise")
+    p.add_argument("--items", type=Path, help="the old version's Generation (`generate --json`)")
+    p.add_argument("--all", action="store_true", help="list unchanged requirements too")
+    p.add_argument("--json", action="store_true", help="print the whole SpecDiff as JSON")
+    p.set_defaults(run=_diff)
 
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
@@ -391,6 +416,40 @@ def _calibrate_score(args: argparse.Namespace) -> int:
     else:
         print(calibration_report(result))
     return 0 if result.labeled else 1
+
+
+def _trace(args: argparse.Namespace) -> int:
+    try:
+        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+        reqs = None if args.requirements is None else _load_requirements(args.requirements)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    matrix = trace(generation, reqs)
+    if args.json:
+        print(matrix.model_dump_json(indent=2))
+    elif args.csv:
+        print(matrix_csv(matrix), end="")
+    else:
+        print(matrix_report(matrix))
+    return 1 if matrix.gaps or matrix.orphans else 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    try:
+        old, new = _load_requirements(args.old), _load_requirements(args.new)
+        items = None
+        if args.items is not None:
+            items = Generation.model_validate_json(args.items.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    result = diff(old, new, items=items)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(diff_report(result, unchanged=args.all))
+    return 0
 
 
 def _corpora(args: argparse.Namespace) -> int:
