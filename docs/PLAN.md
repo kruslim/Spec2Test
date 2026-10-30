@@ -58,7 +58,14 @@ The pipeline only ever talks to `LLMClient`, so models are a configuration choic
 | Gold-set labeler | Claude Opus | Labels from the source text directly, never from a pipeline run. |
 | Second labeler | Gemini (planned) | Labels the same scope independently; the eval harness scores one label set against the other, and the disagreements are what you review by hand. |
 | Reviewer | You | Settles every disagreement and signs off a gold set before its numbers are quoted. |
-| Test-case judge (phase 5) | Neither the generator nor a labeler (Gemini once added) | Calibrated against your own labels. |
+| Test-case judge (phase 5) | Gemini until it starts labeling; then OpenAI's mid-tier GPT model | Calibrated against your own labels. Decided Oct 30, 2026: see below. |
+
+**Judge choice (decided Oct 30, 2026).** Once Gemini labels gold sets, it cannot also judge, so the judge moves to OpenAI's current mid-tier GPT model (GPT-5.5 class), called through `OpenAICompatLLM`. Why:
+
+- It is a fourth model family. Kimi generates and Claude and Gemini label, so an OpenAI judge shares blind spots with none of them.
+- Judging is a small, fixed workload: about 37 items per corpus, one call each, each about 10k input tokens (the item plus its source context, at most 40,000 characters) and about 1k output tokens. At the published mid-tier rates (about $5 in and $30 out per million tokens, Oct 2026), that is roughly $0.08 per item and $3 per FMVSS 111 run (an estimate: token counts are not measured yet). The flagship tier would cost about twice as much. Cost is small either way, so quality decides, and the mid-tier model is the cheapest one strong enough to apply a five-criterion rubric to long source context.
+- The choice is provisional until calibration. Run `spec2test calibrate score` with both the current judge and the new one on your 30 labeled items, and keep the new one only if its kappa on `acceptable` is at least Gemini's. If it falls short, try the flagship next.
+- Before the first run, check the model ID and price on OpenAI's own pricing page (third-party listings disagree), and add an `openai` preset to `OpenAICompatLLM`. `model_family` already separates `gpt` from the other families.
 
 The eval enforces this: each gold set records its `labeler` and whether a person has `reviewed` it, and every eval run warns when the scored model is from the labeler's family or the gold set is unreviewed. No vision model is involved: Docling reads PDFs with its own local layout models.
 
@@ -140,7 +147,7 @@ Done when: flag precision/recall is reported in the eval output.
 Add a testability linter: deterministic rules (vague terms such as "adequate" or "as appropriate", missing units, missing conditions, compound requirements, unbounded terms) plus an LLM pass for subtler ambiguity. Each flag carries a reason and a suggested rewrite. Wire flags into the eval harness.
 ```
 
-Status (Oct 21, 2026): built. `spec2test lint` and `spec2test eval --lint full|rules|off`; eval reports flag precision/recall overall and per kind, and rescoring re-runs the rules for free. Live FMVSS 111 run (Kimi, rules and LLM pass): 100% flag recall (7/7), 38.9% flag precision (7/18). The rules raised 9 kind-flags with 7 right; the LLM pass's false flags are mostly arguable gaps the gold set does not label ("backing event has ended" undefined, "permanently and indelibly"). The FMVSS 111 gold set flags only `vague_term`; decide whether those gaps belong in it.
+Status (Oct 21, 2026): built. `spec2test lint` and `spec2test eval --lint full|rules|off`; eval reports flag precision/recall overall and per kind, and rescoring re-runs the rules for free. Live FMVSS 111 run (Kimi, rules and LLM pass): 100% flag recall (7/7), 38.9% flag precision (7/18). The rules raised 9 kind-flags with 7 right; the LLM pass's false flags are mostly arguable gaps the gold set does not label ("backing event has ended" undefined, "permanently and indelibly"). The FMVSS 111 gold set flags only `vague_term`. Decided (Oct 30, 2026): yes, the gold set labels every testability flag kind that applies (`vague_term`, `missing_unit`, `missing_condition`, `compound`, `unbounded`), as `gold/README.md` already asks. The 39 records need relabeling for the other four kinds and your review before flag precision is quoted again; rescoring the saved run is free.
 
 ### Phase 5 — Generation
 
