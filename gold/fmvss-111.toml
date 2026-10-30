@@ -1,7 +1,9 @@
 # FMVSS 111 gold set (corpora/manifest.toml: fmvss-111, 2025 annual edition).
 #
 # Provenance: labeled by Claude Opus 5.5 from the ingested text on 2026-10-21, at the
-# project owner's request, and reviewed by the project owner on 2026-10-21. Scores for
+# project owner's request, and reviewed by the project owner on 2026-10-21. Testability
+# flags relabeled for every kind by Claude Opus 5.5 on 2026-10-30 (three records gained
+# flags: S5.1.2:3, S5.2.2:2, S5.4.2:1); the new flags await the owner's review. Scores for
 # Kimi (the main extraction model) are independent of the labeler; scores for an Opus
 # extractor share its blind spots.
 #
@@ -20,4 +22,4 @@
 
 scope = ["S5", "S10", "S11"]
 labeler = "claude-opus-5-5"
-reviewed = true   # by the project owner, 2026-10-21
+reviewed = false   # reviewed 2026-10-21; the 2026-10-30 flag relabel is not yet reviewed
