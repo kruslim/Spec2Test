@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv sync *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run spec2test --help)",
+      "Bash(uv run spec2test ingest *)",
+      "Bash(uv run spec2test corpora status)",
+      "Bash(uv run spec2test corpora parse)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git check-ignore *)",
+      "PowerShell(uv sync *)",
+      "PowerShell(uv run pytest *)",
+      "PowerShell(uv run ruff *)",
+      "PowerShell(uv run spec2test --help)",
+      "PowerShell(uv run spec2test ingest *)",
+      "PowerShell(uv run spec2test corpora status)",
+      "PowerShell(uv run spec2test corpora parse)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log *)",
+      "PowerShell(git show *)",
+      "PowerShell(git check-ignore *)"
+    ],
+    "ask": [
+      "Bash(SPEC2TEST_LIVE=1 *)",
+      "Bash(git push *)",
+      "Bash(git add -f *)",
+      "Bash(git add --force *)",
+      "PowerShell(git push *)",
+      "PowerShell(git add -f *)",
+      "PowerShell(git add --force *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_format.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

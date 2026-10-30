@@ -8,6 +8,12 @@ build/
 *.egg-info/
 .env
 
+# Claude Code: personal settings and the desktop app's worktrees stay local;
+# .claude/settings.json, skills and hooks are shared.
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/worktrees/
+
 # Corpus documents are never committed; only the manifest and README are.
 corpora/*
 !corpora/manifest.toml
