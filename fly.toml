@@ -1,0 +1,24 @@
+# Fly.io settings for the hosted app (docs/DEPLOY.md). Set `app` to the name you create
+# with `fly launch --no-deploy`; the sign-in settings and API keys are Fly secrets.
+app = "spec2test"
+primary_region = "ord"
+
+[env]
+  SPEC2TEST_DEPLOY_CONFIG = "/data/deploy.toml"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Stop the machine when nobody is using it; the next visit starts it again.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "spec2test_data"
+  destination = "/data"
+
+# Docling's PDF models need a few GB of memory.
+[[vm]]
+  memory = "4gb"
+  cpus = 2

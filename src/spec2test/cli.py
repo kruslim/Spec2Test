@@ -10,12 +10,25 @@ import subprocess
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from spec2test import corpora, evals
+from spec2test.deploy import (
+    AuthConfigError,
+    DeployConfigError,
+    Workspace,
+    auth_secrets,
+    ledger,
+    load_config,
+    metrics,
+    metrics_report,
+    month_of,
+    over_cap,
+    serve,
+)
 from spec2test.export import EXPORTERS, Profile, load_profile, prepare, run_exporter
 from spec2test.extract import Extraction, extract
 from spec2test.generate import Generation, generate, pages_cited, render
@@ -249,6 +262,26 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("ids", nargs="*", metavar="ID", help="documents to act on (default: all)")
     p.add_argument("--dir", type=Path, default=corpora.DEFAULT_DIR, help="corpora folder")
     p.set_defaults(run=_corpora)
+
+    p = commands.add_parser("deploy", help="the hosted app: check, serve, metrics, delete")
+    actions = p.add_subparsers(required=True, metavar="ACTION")
+    s = actions.add_parser("check", help="check a deployment config and show this month's spend")
+    s.add_argument("config", type=Path, help="deployment config TOML")
+    s.set_defaults(run=_deploy_check)
+    s = actions.add_parser("serve", help="serve the hosted app (needs the `deploy` extra)")
+    s.add_argument("config", type=Path, help="deployment config TOML")
+    s.add_argument("--port", type=int, help="port (default: $PORT, else 8501)")
+    s.set_defaults(run=_deploy_serve)
+    s = actions.add_parser("metrics", help="documents, items reviewed, acceptance, model use")
+    s.add_argument("config", type=Path, help="deployment config TOML")
+    s.add_argument("--month", help="YYYY-MM for the model use (default: this month)")
+    s.add_argument("--json", action="store_true", help="print the metrics as JSON")
+    s.set_defaults(run=_deploy_metrics)
+    s = actions.add_parser("delete", help="delete one workspace's data, as its members can")
+    s.add_argument("config", type=Path, help="deployment config TOML")
+    s.add_argument("workspace", help="workspace id")
+    s.add_argument("--yes", action="store_true", help="really delete; it cannot be undone")
+    s.set_defaults(run=_deploy_delete)
     return parser
 
 
@@ -813,3 +846,73 @@ def _summary(doc: Document) -> str:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def _deploy_check(args: argparse.Namespace) -> int:
+    try:
+        config = load_config(args.config)
+    except DeployConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    spend = ledger(config).spend(month_of(datetime.now(UTC)))
+    caps = [
+        f"${config.cap.monthly_usd:.2f}" if config.cap.monthly_usd is not None else None,
+        f"{config.cap.monthly_tokens:,} tokens" if config.cap.monthly_tokens else None,
+    ]
+    members = sum(len(ws.members) for ws in config.workspaces.values())
+    print(f"data: {config.data_dir}")
+    print(f"model: {config.llm.model_id} ({config.llm.provider})")
+    print(f"cap: {' and '.join(c for c in caps if c)} a month")
+    print(
+        f"{spend.month}: {spend.calls} calls, {spend.tokens:,} tokens, ${spend.dollars:.2f}"
+        + (f" (+{spend.unpriced_calls} unpriced calls)" if spend.unpriced_calls else "")
+        + (f"; budget used up: {reason}" if (reason := over_cap(spend, config.cap)) else "")
+    )
+    print(f"workspaces: {len(config.workspaces)}, {members} members")
+    try:
+        auth_secrets(os.environ)
+        print("sign-in: configured")
+    except AuthConfigError as exc:
+        print(f"sign-in: not configured ({exc})")
+    return 0
+
+
+def _deploy_serve(args: argparse.Namespace) -> int:
+    if importlib.util.find_spec("authlib") is None:
+        print(
+            "error: the hosted app needs the deploy extra: uv sync --extra deploy", file=sys.stderr
+        )
+        return 2
+    port = args.port or int(os.environ.get("PORT") or 8501)
+    try:
+        return serve(args.config, port=port)
+    except (DeployConfigError, AuthConfigError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+def _deploy_metrics(args: argparse.Namespace) -> int:
+    try:
+        config = load_config(args.config)
+    except DeployConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    rows = [metrics(config, wid, args.month) for wid in config.workspaces]
+    if args.json:
+        print(json.dumps([m.model_dump(mode="json") for m in rows], indent=2))
+    else:
+        print(metrics_report(rows))
+    return 0
+
+
+def _deploy_delete(args: argparse.Namespace) -> int:
+    try:
+        ws = Workspace(load_config(args.config), args.workspace)
+    except (DeployConfigError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not args.yes:
+        print(f"error: this deletes all of {ws.id}'s data; pass --yes to do it", file=sys.stderr)
+        return 2
+    print(f"deleted {ws.dir}" if ws.delete() else f"nothing stored for {ws.id}")
+    return 0

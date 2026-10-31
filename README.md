@@ -525,6 +525,53 @@ your own settings from `export.options` (the profile's `[output.options]`). Expo
 write the profile's columns, never fields of their own invention. The tests carry a
 working pair in `tests/plugin_demo.py`.
 
+## Deploy
+
+`spec2test deploy serve CONFIG` runs the review app for design partners on a host: they
+sign in, work in their own workspace, see its usage and can delete its data. It needs the
+`deploy` extra (`uv sync --extra deploy`: the review UI plus Streamlit's OpenID Connect
+sign-in). [docs/DEPLOY.md](docs/DEPLOY.md) is the runbook for Fly.io; the `Dockerfile`
+works on any host that runs a container with a persistent volume.
+
+- **Sign-in**: any OpenID Connect provider (Google, Microsoft, Auth0, ...) through
+  `st.login`. The provider's settings come from `SPEC2TEST_AUTH_*` variables; `serve`
+  writes them to a private temporary folder for Streamlit, never to the repo or the data
+  directory. An email the provider marks unverified does not sign in.
+- **Workspaces**: the config lists each workspace and its members' emails (any case; one
+  workspace per email). Each workspace has its own folder and review log under
+  `data_dir/workspaces/`; the app only ever opens the signed-in member's. An email no
+  workspace lists sees only the data-handling page. Decisions are logged under the
+  signed-in email.
+- **Delete my data**: on the *Your data* page, a member types the workspace id to delete
+  every document, generation and decision in it, for every member; the parsed uploads
+  cached in memory go too. `spec2test deploy delete CONFIG ID --yes` does the same for
+  the operator.
+- **Cost cap**: every run calls the one model the config names, through `CappedLLM`, which
+  writes each call's tokens (and price, when the model has one) to a usage ledger and
+  refuses the next call once the month's total reaches `cap.monthly_usd` or
+  `cap.monthly_tokens`, over all workspaces together (UTC calendar months). A run can end
+  a month over the cap by at most one call, and a run the cap stops saves nothing. A
+  model with no price (`kimi-for-coding`) needs a token cap; the config refuses a dollar
+  cap alone for it rather than guess. The ledger holds no document text, and keeps a
+  deleted workspace's rows so the month's spend stays right.
+- **Usage metrics**: per workspace, documents processed, items reviewed, acceptance rate
+  (as in `review stats`) and the month's model calls, tokens and dollars. Members see
+  their own on *Your data*; `spec2test deploy metrics CONFIG` lists every workspace.
+- **Data handling**: a plain-language page (`src/spec2test/deploy/data-handling.md`),
+  readable before sign-in, says what is kept, who sees it, which provider receives the
+  text, and how deletion works. Facts the config's `[data_page]` table leaves out (host,
+  contact, backup retention, the provider's terms) show as [brackets].
+
+```bash
+uv sync --extra deploy
+uv run spec2test deploy check examples/deploy/deploy.toml    # validate; this month's spend
+uv run spec2test deploy metrics /data/deploy.toml --json
+uv run spec2test deploy delete /data/deploy.toml widget-co --yes
+```
+
+The config format is in `examples/deploy/deploy.toml` (an invented partner). The real one
+lists partners' emails, so it lives on the host's volume, not in git.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/). One command installs everything, including the
