@@ -426,7 +426,8 @@ def test_eval_lint_modes(doc, gold, fake_llm):
     off = evaluate(doc, gold, fake_llm, corpus="w", lint="off")
     assert off.lint is None
     assert off.warnings == [
-        "the extraction was not linted: flag precision and recall measure nothing"
+        FAILED_SECTION,
+        "the extraction was not linted: flag precision and recall measure nothing",
     ]
 
 
@@ -434,7 +435,22 @@ def test_failed_lint_batches_are_a_warning(doc, gold, fake_llm):
     fake_llm.fixtures = [f for f in fake_llm.fixtures if f.schema != "FlagDrafts"]
     run = evaluate(doc, gold, fake_llm, corpus="w")
     assert len(run.lint.failed) == 4  # sections 2.1, 2.2, 2.3 and 2.5
-    assert run.warnings == ["the LLM lint pass failed for 4 batch(es); flag recall is understated"]
+    assert run.warnings == [
+        FAILED_SECTION,
+        "the LLM lint pass failed for 4 batch(es); flag recall is understated",
+    ]
+
+
+FAILED_SECTION = (
+    "the extraction call failed for 1 section(s); recall is understated: run again before "
+    "quoting it"
+)
+
+
+def test_failed_extraction_sections_are_a_warning(run):
+    # The canned extraction fails section 2.6 on purpose. An outage lowers recall without
+    # saying anything about the model, so the run says so.
+    assert [f.section for f in run.extraction.failed_sections] and FAILED_SECTION in run.warnings
 
 
 def test_scoring_a_model_against_its_own_labels_warns(doc):
@@ -453,7 +469,7 @@ def test_scoring_a_model_against_its_own_labels_warns(doc):
 
 def test_gold_set_records_who_labeled_it(gold, run):
     assert (gold.labeler, gold.reviewed) == ("Spec2Test tests", True)
-    assert (run.gold_labeler, run.warnings) == ("Spec2Test tests", [])
+    assert (run.gold_labeler, run.warnings) == ("Spec2Test tests", [FAILED_SECTION])
 
 
 def test_html_report_is_self_contained_and_escaped(doc, gold, run):

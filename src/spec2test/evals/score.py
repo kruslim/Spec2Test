@@ -189,7 +189,7 @@ def score(
         scope=gold.scope,
         gold_labeler=gold.labeler,
         gold_reviewed=gold.reviewed,
-        warnings=warnings(gold, model, lint),
+        warnings=warnings(gold, model, lint, extraction),
         gold=gold.requirements,
         predicted=predicted,
         extraction=extraction,
@@ -202,9 +202,12 @@ def score(
     )
 
 
-def warnings(gold: GoldSet, model: str, lint: Lint | None = None) -> list[str]:
+def warnings(
+    gold: GoldSet, model: str, lint: Lint | None = None, extraction: Extraction | None = None
+) -> list[str]:
     """What makes a score untrustworthy: the scored model grading itself, labels no person
-    has checked, or flags the linter did not raise because it was off or failed."""
+    has checked, sections whose extraction call failed (an outage, not the model's
+    accuracy), or flags the linter did not raise because it was off or failed."""
     out = []
     if gold.labeler is not None and model_family(gold.labeler) == model_family(model):
         out.append(
@@ -215,6 +218,11 @@ def warnings(gold: GoldSet, model: str, lint: Lint | None = None) -> list[str]:
     if not gold.reviewed:
         who = f"labeled by {gold.labeler}" if gold.labeler else "labeler unknown"
         out.append(f"the gold set ({who}) has not been reviewed by a person")
+    if extraction is not None and extraction.failed_sections:
+        out.append(
+            f"the extraction call failed for {len(extraction.failed_sections)} section(s); "
+            "recall is understated: run again before quoting it"
+        )
     if lint is None and any(g.testability_flags for g in gold.requirements):
         out.append("the extraction was not linted: flag precision and recall measure nothing")
     elif lint is not None and lint.failed:

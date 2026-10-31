@@ -11,8 +11,9 @@ Review what is about to be committed: `git status --short`, `git diff --cached`,
 Check every added or changed file:
 
 1. **Source documents**: nothing from `corpora/` other than `manifest.toml` and
-   `README.md`; no PDF, DOCX or XLSX anywhere in the diff; no gold set for a document
-   that stays out of git (`gold/unece-r158.*`, `gold/fsae-rules.*`). Run
+   `README.md`; no PDF, DOCX or XLSX anywhere in the diff; no gold set or judge sample
+   for a document that stays out of git (`gold/unece-r158.*`, `gold/fsae-rules.*`,
+   `gold/judge/unece-r158.*`, `gold/judge/fsae-rules.*`). Run
    `git check-ignore -v` on anything suspicious.
 2. **Employer data**: no employer specs, test cases, file formats, YAML layouts, code,
    internal names, part numbers or program codes, in code, fixtures, prompts, docs or

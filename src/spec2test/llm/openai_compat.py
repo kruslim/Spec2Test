@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
@@ -41,6 +43,9 @@ PRESETS = {
     ),
 }
 
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+"""Rate limits and server errors: the request did not run, so it is safe to send again."""
+
 _FENCE = re.compile(r"^```(?:json)?\s*(?P<body>.*?)\s*```$", re.DOTALL)
 
 
@@ -48,7 +53,8 @@ class OpenAICompatLLM(LLMClient):
     """Calls `{base_url}/chat/completions` and validates the reply against the schema.
 
     The API key is read from `api_key_env` on first use, so constructing this class never
-    needs credentials.
+    needs credentials. Every failure, including a malformed reply, raises `LLMError`, so a
+    stage records it against one section or item instead of losing the whole run.
     """
 
     def __init__(
@@ -59,14 +65,20 @@ class OpenAICompatLLM(LLMClient):
         api_key_env: str,
         max_tokens: int = 16_000,
         timeout: float = 300.0,
+        retries: int = 3,
+        backoff: float = 2.0,
         client: httpx2.Client | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.retries = retries
+        self.backoff = backoff
         self._client = client
+        self._sleep = sleep
 
     @classmethod
     def preset(cls, name: str, **kwargs: Any) -> OpenAICompatLLM:
@@ -97,23 +109,22 @@ class OpenAICompatLLM(LLMClient):
             },
             {"role": "user", "content": prompt},
         ]
+        response = self._post(
+            key, {"model": self.model, "max_tokens": self.max_tokens, "messages": messages}
+        )
         try:
-            response = self.client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "User-Agent": f"spec2test/{version('spec2test')}",
-                },
-                json={"model": self.model, "max_tokens": self.max_tokens, "messages": messages},
-            )
-        except httpx2.HTTPError as exc:
-            raise LLMError(f"{self.base_url}: {exc}") from exc
-        if response.status_code != 200:
-            raise LLMError(f"{self.model} returned HTTP {response.status_code}: {response.text}")
-
-        body = response.json()
-        self._record(body)
-        choice = body["choices"][0]
+            body = response.json()
+        except ValueError as exc:
+            raise LLMOutputError(f"{self.model} returned a body that is not JSON: {exc}") from exc
+        if isinstance(body, dict):
+            self._record(body)
+        try:
+            choice = body["choices"][0]
+            choice["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMOutputError(
+                f"{self.model} returned no completion choice: {response.text[:500]}"
+            ) from exc
         if choice.get("finish_reason") == "content_filter":
             raise LLMRefusalError(f"{self.model} declined the request")
         if choice.get("finish_reason") == "length":
@@ -129,6 +140,36 @@ class OpenAICompatLLM(LLMClient):
             raise LLMOutputError(
                 f"{self.model} output did not match {schema.__name__}: {exc}"
             ) from exc
+
+    def _post(self, key: str, payload: dict[str, Any]) -> httpx2.Response:
+        """POST the request; a rate limit, a server error or a refused connection is tried
+        again `retries` times, with a growing pause. Other errors raise at once."""
+        for attempt in range(self.retries + 1):
+            try:
+                response = self.client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "User-Agent": f"spec2test/{version('spec2test')}",
+                    },
+                    json=payload,
+                )
+            except httpx2.ConnectError as exc:
+                if attempt == self.retries:
+                    raise LLMError(f"{self.base_url}: {exc}") from exc
+            except httpx2.HTTPError as exc:
+                # A timeout or a reply cut off may mean the model ran and billed the call:
+                # never send it again.
+                raise LLMError(f"{self.base_url}: {exc}") from exc
+            else:
+                if response.status_code == 200:
+                    return response
+                if response.status_code not in _RETRY_STATUS or attempt == self.retries:
+                    raise LLMError(
+                        f"{self.model} returned HTTP {response.status_code}: {response.text}"
+                    )
+            self._sleep(self.backoff * 2**attempt)
+        raise AssertionError("unreachable")
 
     def _record(self, body: dict[str, Any]) -> None:
         """Record the call's tokens. Output is `total - prompt` when the endpoint reports a
