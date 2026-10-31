@@ -313,6 +313,8 @@ uv run spec2test review stats                                  # acceptance rate
 uv run spec2test review stats --generation 258ba75d --json
 ```
 
+The app serves `localhost` only, since anyone who can open it can start a paid run.
+
 Every decision goes to a SQLite log (`review.sqlite` by default, `--db` to change it; it
 is git-ignored, since it stores the whole source document). Decisions are only added, so
 an item's history stays; the latest decision is the one that counts. An edit keeps both

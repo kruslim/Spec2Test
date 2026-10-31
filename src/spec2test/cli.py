@@ -499,6 +499,8 @@ def _review_open(args: argparse.Namespace) -> int:
     # Streamlit sends usage statistics by default; nothing here should leave the machine.
     command = [sys.executable, "-m", "streamlit", "run", str(APP)]
     command += ["--browser.gatherUsageStats", "false"]
+    # Serve this machine only: anyone who can reach the app can start paid model runs.
+    command += ["--server.address", "localhost"]
     if args.port is not None:
         command += ["--server.port", str(args.port)]
     return subprocess.call(command, env=env)

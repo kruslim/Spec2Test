@@ -216,6 +216,8 @@ def test_cli_open_adds_the_generation_and_starts_streamlit(
     [(command, env)] = calls
     assert command[1:5] == ["-m", "streamlit", "run", str(APP)]
     assert command[-2:] == ["--server.port", "8600"]
+    at = command.index("--server.address")
+    assert command[at + 1] == "localhost"  # not reachable from the network
     gid = env["SPEC2TEST_REVIEW_OPEN"]
     assert ReviewStore(db).document(gid) == widget_lamp
     assert env["SPEC2TEST_REVIEW_FAKE"] == str((FIXTURES / "llm").resolve())
