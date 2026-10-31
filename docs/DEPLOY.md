@@ -71,7 +71,7 @@ there after each change; the app shows an error page while the config is invalid
 - Sign in with an email that no workspace lists: it must see only the data-handling page.
 - Read the data-handling page as the partner will: no [brackets] left.
 - Check the model provider's terms allow sending a partner's documents through your API
-  key. [Kimi Code subscription terms: not checked yet.]
+  key. Kimi: allowed, per the operator (Oct 31, 2026).
 
 ## Running it
 
