@@ -143,6 +143,30 @@ def test_prompt_gives_the_enclosing_clauses_as_context(fake_llm, doc):
     assert f"<section>\n{doc.section('2.1').text}\n</section>" in call.prompt
 
 
+def test_extraction_follows_the_gold_set_policy(fake_llm):
+    # Invented. The canned answer is the one the policy asks for: the permission that only
+    # relaxes the requirement is no record; the exception and the named test procedure are
+    # conditions. This checks the pipeline keeps such an answer, not that a model gives it.
+    doc = build_document(
+        "reflector",
+        [
+            Block(
+                "text",
+                "4.1 Reflector. Except as provided in 4.2, the reflector shall return at least "
+                "80 % of incident light when tested in accordance with 5.1. The reflector need "
+                "not be removable by hand.",
+            )
+        ],
+    )
+    result = extract(doc, fake_llm)
+    [req] = result.requirements
+    assert req.strength == Strength.SHALL
+    assert req.conditions == ["except as provided in 4.2", "when tested in accordance with 5.1"]
+    assert "need not" not in req.source_anchor.quote
+    for rule in ['"need not"', "relaxes or exempts", "test procedure the clause itself names"]:
+        assert rule in SYSTEM
+
+
 def test_explicit_sections_are_sent_even_without_normative_wording(doc):
     llm = FakeLLM([answer()])
     result = extract(doc, llm, sections=[doc.section("1.1").index])

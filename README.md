@@ -32,6 +32,12 @@ and section. A quote that is not in the section verbatim goes back to the model 
 the error, then lands in `Extraction.rejected`, never in `requirements`.
 `check_citation(requirement, document)` verifies any record's anchor against the source.
 
+The prompt follows the gold-set labeling policy (`gold/fmvss-111.toml`): a permission that
+only relaxes another requirement ("may", "need not") is not a requirement, nor is a clause
+that only says how a measurement is made or only points at its subclauses. Conditions are
+applicability, exceptions, the state the requirement holds in and the test procedure the
+clause itself names, taken from that section only.
+
 ```bash
 uv run spec2test extract path/to/spec.pdf                  # live, Kimi Code (KIMI_CODE_API_KEY)
 uv run spec2test extract doc.json --provider anthropic     # live, Anthropic API
