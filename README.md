@@ -47,6 +47,9 @@ uv run spec2test extract doc.json --fake tests/fixtures/llm  # offline, FakeLLM 
 Kimi is the default extraction model. `--provider kimi-code` uses
 `spec2test.llm.OpenAICompatLLM`, a client for any OpenAI-compatible chat-completions
 endpoint. It sends the JSON Schema in the prompt and validates the reply with Pydantic.
+A rate limit (HTTP 429), a server error (5xx) or a refused connection is retried up to
+three times, 2, 4 and 8 s apart; a timeout is not, since the call may already have been
+billed. Every failure, a malformed reply included, fails only its own section or item.
 
 `doc.json` is a Document saved with `spec2test ingest --json`.
 
@@ -118,8 +121,9 @@ quote.
 Model roles: the model being scored must not have labeled its own gold set, or its blind
 spots count as correct. Kimi extracts; the gold sets are labeled by a person or by a
 different model (FMVSS 111: Claude Opus 5.5, see `gold/fmvss-111.toml`). The report warns
-when the extraction model is from the labeler's model family, and when no person has
-reviewed the gold set yet.
+when the extraction model is from the labeler's model family, when no person has
+reviewed the gold set yet, and when an extraction call failed for a section: an outage
+lowers recall without saying anything about the model, so run again before quoting it.
 
 ### Cost
 

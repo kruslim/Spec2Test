@@ -13,7 +13,8 @@ stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase
   internal document, not even as a test fixture or an example.
 - Fixtures and gold sets must be traceable to a public source or be invented for the test.
 - Corpus documents (`corpora/*`) and gold sets for non-redistributable documents
-  (`gold/unece-r158.*`, `gold/fsae-rules.*`) are git-ignored: never force-add them.
+  (`gold/unece-r158.*`, `gold/fsae-rules.*`, and their judge samples in `gold/judge/`) are
+  git-ignored: never force-add them.
 - Run `/firewall-check` before every commit.
 
 ## Commands

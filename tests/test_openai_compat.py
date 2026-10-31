@@ -118,6 +118,72 @@ def test_http_error_raises(llm_returning):
         llm.generate("Say ready.", Echo)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>bad gateway</html>", b'{"error": {"message": "overloaded"}}', b'{"choices": []}'],
+)
+def test_a_malformed_reply_is_an_llm_error(monkeypatch, body):
+    # A stage catches LLMError per section or item; anything else would end the whole run.
+    monkeypatch.setenv(ENV, "test-key")
+    transport = httpx2.MockTransport(lambda request: httpx2.Response(200, content=body))
+    llm = OpenAICompatLLM(
+        "https://x.test", "m", api_key_env=ENV, client=httpx2.Client(transport=transport)
+    )
+    with pytest.raises(LLMOutputError):
+        llm.generate("Say ready.", Echo)
+
+
+def flaky(monkeypatch, *responses):
+    """An LLM whose endpoint answers with `responses` in turn; pauses are recorded."""
+    monkeypatch.setenv(ENV, "test-key")
+    queue, sent = list(responses), []
+
+    def answer(request):
+        sent.append(request)
+        r = queue.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    pauses: list[float] = []
+    llm = OpenAICompatLLM(
+        "https://x.test",
+        "m",
+        api_key_env=ENV,
+        client=httpx2.Client(transport=httpx2.MockTransport(answer)),
+        sleep=pauses.append,
+    )
+    return llm, sent, pauses
+
+
+def test_rate_limits_and_server_errors_are_retried(monkeypatch):
+    ok = httpx2.Response(200, json=completion('{"word": "ready"}'))
+    llm, sent, pauses = flaky(
+        monkeypatch,
+        httpx2.Response(429, json={}),
+        httpx2.Response(503, json={}),
+        httpx2.ConnectError("refused"),
+        ok,
+    )
+    assert llm.generate("Say ready.", Echo).word == "ready"
+    assert len(sent) == 4 and pauses == [2.0, 4.0, 8.0]
+
+
+def test_retries_give_up_with_the_last_error(monkeypatch):
+    llm, sent, _ = flaky(monkeypatch, *[httpx2.Response(503, text="busy")] * 4)
+    with pytest.raises(LLMError, match="HTTP 503: busy"):
+        llm.generate("Say ready.", Echo)
+    assert len(sent) == 4
+
+
+def test_a_timeout_is_not_sent_again(monkeypatch):
+    # The model may have run and billed the call before the reply was lost.
+    llm, sent, pauses = flaky(monkeypatch, httpx2.ReadTimeout("slow"))
+    with pytest.raises(LLMError, match="slow"):
+        llm.generate("Say ready.", Echo)
+    assert len(sent) == 1 and pauses == []
+
+
 def test_missing_key_raises_before_any_request(llm_returning, monkeypatch):
     llm, recorder = llm_returning(completion('{"word": "ready"}'))
     monkeypatch.delenv(ENV)

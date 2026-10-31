@@ -49,9 +49,11 @@ from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    # Windows consoles default to a legacy code page that cannot print '§' or '±'.
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    # Windows consoles default to a legacy code page that cannot print '§' or '±'. Errors
+    # quote the source too, so stderr gets the same, and never fails on a character.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     return args.run(args)
 
 
