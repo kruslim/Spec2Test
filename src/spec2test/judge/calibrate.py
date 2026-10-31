@@ -164,3 +164,24 @@ def calibrate(
         disagreements=disagreements,
         judging=judging,
     )
+
+
+def judge_sample(sample: list[CalibrationItem], llm: LLMClient) -> Judging:
+    """Judge every line of a calibration sample, labeled or not, with the source context
+    stored on each line: a second judge can then grade exactly the items the first did."""
+    judge = model_name(llm)
+    generators = sorted({s.generator_model for s in sample})
+    judging = Judging(
+        judge_model=judge,
+        generator_model=", ".join(generators),
+        warnings=[w for g in generators for w in judge_warnings(judge, g)],
+        pages=pages_cited(s.requirement for s in sample),
+    )
+    start = len(llm.usage)
+    for s in sample:
+        try:
+            judging.judgements.append(judge_item(s.requirement, s.item, llm, s.context))
+        except LLMError as exc:
+            judging.failed.append(JudgeFailure(item_id=s.item.id, error=str(exc)))
+    judging.usage = llm.usage[start:]
+    return judging

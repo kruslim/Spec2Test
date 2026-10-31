@@ -21,14 +21,27 @@ from spec2test.judge import (
     Judging,
     calibrate,
     calibration_report,
+    compare,
+    comparison_report,
     judge,
+    judge_sample,
     load_sample,
     make_sample,
     quality_report,
     write_sample,
 )
 from spec2test.lint import Lint, lint
-from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM, cost_line
+from spec2test.llm import (
+    PRESETS,
+    AnthropicLLM,
+    FakeLLM,
+    LLMClient,
+    OpenAICompatLLM,
+    SessionLLM,
+    cost_line,
+    write_requests,
+)
+from spec2test.llm.session import DEFAULT_MODEL as SESSION_MODEL
 from spec2test.review import APP, DEFAULT_DB, ReviewStore, stats_report
 from spec2test.schema import Requirement
 from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
@@ -112,9 +125,13 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(run=_generate)
 
     p = commands.add_parser("judge", help="grade generated items against the rubric")
-    p.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
+    p.add_argument(
+        "path",
+        type=Path,
+        help="a Generation saved by `generate --json`, or a calibration sample (.jsonl)",
+    )
     _add_doc_args(p, "the source, so the judge sees the referenced clauses too")
-    _add_llm_args(p, default="gemini")
+    _add_llm_args(p, default="session", session=True)
     p.add_argument("--json", action="store_true", help="print the whole Judging as JSON")
     p.set_defaults(run=_judge)
 
@@ -129,7 +146,7 @@ def _parser() -> argparse.ArgumentParser:
     s.set_defaults(run=_calibrate_sample)
     s = actions.add_parser("score", help="judge the labeled sample and report agreement")
     s.add_argument("path", type=Path, help="a labeled sample JSONL")
-    _add_llm_args(s, default="gemini")
+    _add_llm_args(s, default="session", session=True)
     s.add_argument(
         "--judgements",
         type=Path,
@@ -138,6 +155,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--json", action="store_true", help="print the whole Calibration as JSON")
     s.set_defaults(run=_calibrate_score)
+    s = actions.add_parser("compare", help="agreement between two judges on the same items")
+    s.add_argument(
+        "first",
+        type=Path,
+        help="saved judgements (`judge --json`, `calibrate score --json`): the main judge",
+    )
+    s.add_argument("second", type=Path, help="saved judgements by the second judge, likewise")
+    s.add_argument("--json", action="store_true", help="print the whole comparison as JSON")
+    s.set_defaults(run=_calibrate_compare)
 
     p = commands.add_parser("trace", help="trace requirements to items; list gaps and orphans")
     p.add_argument("path", type=Path, help="a Generation saved by `generate --json`")
@@ -192,20 +218,40 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_llm_args(p: argparse.ArgumentParser, default: str = "kimi-code") -> None:
+def _add_llm_args(
+    p: argparse.ArgumentParser, default: str = "kimi-code", *, session: bool = False
+) -> None:
+    """`session`: also offer `--provider session`, answers written in a Claude Code session."""
     p.add_argument(
         "--provider",
-        choices=["anthropic", *PRESETS],
+        choices=["anthropic", *PRESETS, *(["session"] if session else [])],
         default=default,
         help=f"model provider (default: {default})",
     )
     p.add_argument("--model", help="model ID (default: the provider's default)")
     p.add_argument("--fake", type=Path, metavar="DIR", help="replay FakeLLM fixtures from DIR")
+    if session:
+        p.add_argument(
+            "--answers",
+            type=Path,
+            metavar="JSONL",
+            help="session answers (`--provider session`); a missing file means none yet",
+        )
+        p.add_argument(
+            "--requests",
+            type=Path,
+            metavar="JSONL",
+            help="where to write the requests still unanswered (default: next to --answers)",
+        )
 
 
 def _llm(args: argparse.Namespace) -> LLMClient:
     if args.fake is not None:
         return FakeLLM.from_dir(args.fake, model=args.model)
+    if args.provider == "session":
+        if args.answers is None:
+            raise ValueError("--provider session needs --answers JSONL (it may not exist yet)")
+        return SessionLLM.from_file(args.answers, model=args.model or SESSION_MODEL)
     if args.provider == "anthropic":
         return AnthropicLLM(args.model) if args.model else AnthropicLLM()
     model = {"model": args.model} if args.model else {}
@@ -392,9 +438,13 @@ def _generate(args: argparse.Namespace) -> int:
 
 def _judge(args: argparse.Namespace) -> int:
     try:
-        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
-        doc = _doc_arg(args)
-        result = judge(generation, _llm(args), doc=doc)
+        llm = _llm(args)
+        if args.path.suffix.lower() == ".jsonl":
+            # A calibration sample carries each item's source context with it.
+            result = judge_sample(load_sample(args.path), llm)
+        else:
+            generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+            result = judge(generation, llm, doc=_doc_arg(args))
     except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
         # SameModelError is a ValueError too.
         print(f"error: {exc}", file=sys.stderr)
@@ -405,6 +455,7 @@ def _judge(args: argparse.Namespace) -> int:
         for f in result.failed:
             print(f"failed  {f.item_id}  {f.error}")
         print(quality_report(result))
+    _write_session_requests(args, llm)
     return 1 if result.failed else 0
 
 
@@ -433,7 +484,8 @@ def _calibrate_score(args: argparse.Namespace) -> int:
         if args.judgements is not None:
             data = json.loads(args.judgements.read_text(encoding="utf-8"))
             saved = Judging.model_validate(data.get("judging", data))
-        result = calibrate(sample, None if saved else _llm(args), saved=saved)
+        llm = None if saved else _llm(args)
+        result = calibrate(sample, llm, saved=saved)
     except (FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -441,7 +493,43 @@ def _calibrate_score(args: argparse.Namespace) -> int:
         print(result.model_dump_json(indent=2))
     else:
         print(calibration_report(result))
+    if llm is not None:
+        _write_session_requests(args, llm)
     return 0 if result.labeled else 1
+
+
+def _calibrate_compare(args: argparse.Namespace) -> int:
+    try:
+        first, second = (_load_judging(path) for path in (args.first, args.second))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    result = compare(first, second)
+    print(result.model_dump_json(indent=2) if args.json else comparison_report(result))
+    return 0 if result.compared else 1
+
+
+def _load_judging(path: Path) -> Judging:
+    """Judgements saved by `judge --json`, or the judging inside `calibrate score --json`."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return Judging.model_validate(data.get("judging", data))
+
+
+def _write_session_requests(args: argparse.Namespace, llm: LLMClient) -> None:
+    """With `--provider session`, write the requests still unanswered for the session."""
+    if not isinstance(llm, SessionLLM):
+        return
+    path = args.requests or args.answers.with_name(f"{args.answers.stem}.requests.jsonl")
+    if not llm.pending:
+        print(f"every request has a session answer in {args.answers}", file=sys.stderr)
+        return
+    write_requests(llm.pending, path)
+    print(
+        f"{len(llm.pending)} request(s) without a session answer written to {path}; answer "
+        f"them in a Claude Code session (.claude/skills/session-judge), append the answers to "
+        f"{args.answers}, then run the same command again",
+        file=sys.stderr,
+    )
 
 
 def _trace(args: argparse.Namespace) -> int:

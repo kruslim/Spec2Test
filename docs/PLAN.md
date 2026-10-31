@@ -54,18 +54,19 @@ The pipeline only ever talks to `LLMClient`, so models are a configuration choic
 
 | Role | Model | Notes |
 | --- | --- | --- |
-| Pipeline: extract, lint, generate | Kimi (`kimi-code`, OpenAI-compatible endpoint) | The default `--provider`. Anthropic (`--provider anthropic`) and any approved endpoint stay pluggable. |
-| Gold-set labeler | Claude Opus | Labels from the source text directly, never from a pipeline run. Runs in Claude Code sessions: there is no Anthropic API key for this project. |
-| Second labeler | Gemini (planned) | Labels the same scope independently; the eval harness scores one label set against the other, and the disagreements are what you review by hand. |
-| Reviewer | You | Settles every disagreement and signs off a gold set before its numbers are quoted. |
-| Test-case judge (phase 5) | Gemini (`gemini-3.1-pro-preview`) | Calibrated against your own labels. Stays the judge when it also becomes the second labeler; see below. |
+| Pipeline: extract, lint, generate | Kimi (`kimi-code`, OpenAI-compatible endpoint) | Always the generator: the model whose output is scored. The default `--provider`; Anthropic (`--provider anthropic`) and any approved endpoint stay pluggable. |
+| Gold-set labeler | Claude Opus, in Claude Code sessions | Labels from the source text directly, never from a pipeline run. No API key: sessions cost no API tokens. |
+| Test-case judge | Claude Opus, in Claude Code sessions | Judges saved Kimi generations through `--provider session` (`spec2test.llm.SessionLLM`), so judging costs no API tokens and any saved run can be judged again for free. |
+| Independent check | Gemini (`gemini-3.1-pro-preview`), paid | Judges only the 30-item calibration sample, once per rubric or generator change, never a full run; `spec2test calibrate compare` reports its agreement with Opus on those items. |
+| Second labeler | None (decided Oct 31, 2026) | You review every gold line instead, so no label-agreement number is reported. |
+| Reviewer | You | Settles every disagreement, signs off a gold set before its numbers are quoted, and labels the calibration sample: the judge counts only once its agreement with you is reported. |
 
-**Judge choice (revised Oct 30, 2026).** The project has API access to Kimi and Gemini only; Claude Opus is reached through Claude Code sessions. That rules out the OpenAI judge recorded earlier the same day, so Gemini stays the judge and also becomes the second labeler. This keeps the rule that a model never grades its own work:
+**Model roles revised (Oct 31, 2026): Kimi generates, Opus labels and judges, Gemini only checks.** Kimi always generates. Claude Opus is the stronger model and costs nothing in Claude Code sessions, but has no API, so it does the work that can be done over saved files: labeling gold sets and judging saved generations. Gemini costs API tokens, so it is kept only as a small independent check on the judge. This replaces the Oct 30 decision that made Gemini the judge of every run and the planned second labeler. It keeps the rule that a model never grades its own work:
 
-- The judge grades Kimi's generated items. The labelers label requirements in the source text. Gemini never judges anything it produced, and Kimi, the only model being scored, labels nothing.
-- The risk is narrower than self-grading: Gemini's blind spots could show up both in its labels and in its verdicts. Two checks cover it. Every label disagreement between Opus and Gemini goes to you, and the judge counts only once its agreement with your own labels (`spec2test calibrate score`) is reported.
-- No new provider, key or code is needed, and no extra API spend: Gemini already runs the judge.
-- If calibration shows the judge disagreeing with you where Gemini's labels also disagree with Opus, revisit this. The fallback is Opus judging in a Claude Code session on the calibration sample, as in the phase 5 cross-check, with its numbers marked as a session run, not an API run.
+- Opus judges Kimi's items, never items it wrote: Opus generates nothing, and the judge refuses the generator's own model and warns about its family. Kimi, the only model being scored, labels and judges nothing.
+- Opus labels requirements and judges items, two different things, so it never grades its own labels. The narrower risk is that its blind spots show up in both. Three checks cover it: you review every gold line, Gemini judges the calibration sample so every Opus-Gemini disagreement on it goes to you, and the judge's numbers count only once its agreement with your labels (`spec2test calibrate score`) is reported.
+- Opus numbers are marked as session runs, with the model ID that served the session, not as API runs.
+- Gemini spend drops from one call per generated item on every judged run (37 on FMVSS 111) to one call per sample item (30) per rubric or generator change, and to none for the label-agreement metric.
 
 The eval enforces this: each gold set records its `labeler` and whether a person has `reviewed` it, and every eval run warns when the scored model is from the labeler's family or the gold set is unreviewed. No vision model is involved: Docling reads PDFs with its own local layout models.
 
@@ -73,7 +74,7 @@ The eval enforces this: each gold set records its `labeler` and whether a person
 
 The eval harness is built in phase 3, before generation is polished. Building measurement first is the story that separates you from other candidates, and it is what lets you claim cross-industry accuracy honestly.
 
-**Gold sets** (public sources only; labeled by a model other than the pipeline's, see Model roles, then reviewed by you). Each is `gold/<corpus>.jsonl` plus a `.toml` that states the labeled scope, the labeler and whether it has been reviewed (format: `gold/README.md`):
+**Gold sets** (public sources only; labeled by Claude Opus in sessions, a model other than the pipeline's, see Model roles, then reviewed by you). Each is `gold/<corpus>.jsonl` plus a `.toml` that states the labeled scope, the labeler and whether it has been reviewed (format: `gold/README.md`):
 
 | Corpus | Why it is in the set | Size target |
 | --- | --- | --- |
@@ -90,8 +91,8 @@ The eval harness is built in phase 3, before generation is polished. Building me
 | Field accuracy | Values, units, tolerances and conditions right: values and comparators exactly, units by meaning (`s` = `seconds`), conditions by close text match |
 | Method accuracy | Verification method matches the gold label |
 | Testability flags | Vague, compound or unit-less requirements caught (precision / recall) |
-| Test-case quality | Rubric-based LLM judge (a different model from the generator), calibrated against your own labels; report judge-human agreement |
-| Label agreement | How often the two labelers agree, before your review; the disagreements are your review list |
+| Test-case quality | Rubric-based judge (Claude Opus in sessions, a different model from the Kimi generator), calibrated against your own labels; report judge-human agreement, and Opus-Gemini agreement on the calibration sample |
+| Label agreement | Only if a second labeler is run (optional, paid): how often the two labelers agree before your review |
 | Acceptance rate | Share of items design partners accept unedited (the production metric) |
 | Cost and latency | Dollars and seconds per page. Every `LLMClient` records each call's tokens; `eval`, `generate` and `judge` report dollars per run and per page from the price table in `spec2test/llm/usage.py` (Kimi Code is unpriced: it is billed by subscription) |
 
@@ -137,7 +138,7 @@ Build spec2test/evals: gold sets stored as JSONL (one labeled Requirement per li
 
 Then label FMVSS 111 before moving on.
 
-Status (Oct 21, 2026): done. Claude Opus labeled 39 requirements in FMVSS 111 (S5, S10, S11), and you reviewed the gold set. The first live run (Kimi) scored 100% recall, 86.7% precision and 51.3% field accuracy; most misses are labeling-policy disagreements (extra conditions, "may" permissions, verification methods). Once Gemini is added, have it label the same scope too, to report label agreement.
+Status (Oct 21, 2026): done. Claude Opus labeled 39 requirements in FMVSS 111 (S5, S10, S11), and you reviewed the gold set. The first live run (Kimi) scored 100% recall, 86.7% precision and 51.3% field accuracy; most misses are labeling-policy disagreements (extra conditions, "may" permissions, verification methods). (Oct 31, 2026: no second labeler by default; see Model roles.)
 
 ### Phase 4 — Testability linter
 
@@ -157,7 +158,7 @@ Done when: each verification method renders its output type and the LLM judge sc
 Generate VerificationItems per requirement by verification method: Inspection to checklist item, Test to test case (preconditions, setup, steps, expected result, pass/fail criterion, equipment), Demonstration and Analysis to evidence items. Add an LLM judge with a written rubric and a calibration script that reports judge-vs-human agreement on a labeled sample. The judge must be a different model from the generator; warn when they share a model family, as the eval does for gold-set labelers.
 ```
 
-Status (Oct 22, 2026): built. `spec2test generate`, `spec2test judge` and `spec2test calibrate sample|score`; Kimi generates, Gemini (`gemini-3.1-pro-preview`) judges against a five-criterion pass/fail rubric plus an overall "acceptable". Live FMVSS 111 run on the 43 in-scope records Kimi extracted: 6 are skipped as permissions or definitions, 37 become items (18 test cases, 9 checklist items, 10 demonstration evidence items; Kimi classified none as analysis), none rejected. Judge: 64.9% of items acceptable unedited (test cases 72.2%), 84.3% of rubric criteria passed. The first version, without section headings, own-section text, definitions or whole referenced ranges, scored 29.7% acceptable (test cases 27.8%) on the same 37 requirements under the same judge. A cross-check by Opus (in a Claude Code session, not an API run) agreed with Gemini on "acceptable" for 65% of the first version's items (kappa 0.31); the rubric was then reworded on procedures versus values, where most of their disagreements were. The judge's numbers are uncalibrated: a 30-item sample is in `gold/judge/fmvss-111.jsonl`, waiting for your labels before judge-human agreement can be reported.
+Status (Oct 22, 2026): built. `spec2test generate`, `spec2test judge` and `spec2test calibrate sample|score`; Kimi generates, Gemini (`gemini-3.1-pro-preview`) judges against a five-criterion pass/fail rubric plus an overall "acceptable". Live FMVSS 111 run on the 43 in-scope records Kimi extracted: 6 are skipped as permissions or definitions, 37 become items (18 test cases, 9 checklist items, 10 demonstration evidence items; Kimi classified none as analysis), none rejected. Judge: 64.9% of items acceptable unedited (test cases 72.2%), 84.3% of rubric criteria passed. The first version, without section headings, own-section text, definitions or whole referenced ranges, scored 29.7% acceptable (test cases 27.8%) on the same 37 requirements under the same judge. A cross-check by Opus (in a Claude Code session, not an API run) agreed with Gemini on "acceptable" for 65% of the first version's items (kappa 0.31); the rubric was then reworded on procedures versus values, where most of their disagreements were. The judge's numbers are uncalibrated: a 30-item sample is in `gold/judge/fmvss-111.jsonl`, waiting for your labels before judge-human agreement can be reported. Since Oct 31, 2026 the judge is Claude Opus in Claude Code sessions (see Model roles); the numbers above are Gemini's and stay recorded as Gemini runs.
 
 ### Phase 6 — Traceability and spec diffs
 
@@ -221,7 +222,7 @@ The payoff: Ford usage becomes a bullet under your Ford experience, and the sepa
 
 Fill the brackets only with numbers you have measured.
 
-- **Projects:** Built and deployed Spec2Test, an AI platform that turns requirements documents into traceable test cases and inspection checklists; \[X\]% extraction recall and \[Y\]% field accuracy across four human-reviewed regulatory gold sets (automotive, aerospace, motorsport). Describe the labels as they were made, e.g. "labeled by two independent models, every disagreement resolved by hand"; never "hand-labeled" for model labels.
+- **Projects:** Built and deployed Spec2Test, an AI platform that turns requirements documents into traceable test cases and inspection checklists; \[X\]% extraction recall and \[Y\]% field accuracy across four human-reviewed regulatory gold sets (automotive, aerospace, motorsport). Describe the labels as they were made, e.g. "model-labeled, every line reviewed by hand"; never "hand-labeled" for model labels.
 - **Projects:** Deployed to \[N\] engineering teams (Formula SAE, \[startup\]); \[Z\]% of generated items accepted without edits; flagged \[K\] untestable requirements before inspection.
 - **Ford (if adopted):** Integrated an open-source requirements-to-test pipeline into the surround-view camera validation workflow via custom adapters; cut test-planning time by \[T\]%.
 
