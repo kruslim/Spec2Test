@@ -13,13 +13,19 @@ from spec2test.evals.models import (
     FlagCounts,
     Metric,
 )
+from spec2test.llm import cost, cost_line
 from spec2test.schema import Requirement
 
 _METHODS = ["inspection", "test", "demonstration", "analysis"]
 
 
 def text_report(run: EvalRun) -> str:
-    lines = [_headline(run), *(f"warning: {w}" for w in run.warnings), ""]
+    lines = [
+        _headline(run),
+        cost_line(run.usage, run.pages),
+        *(f"warning: {w}" for w in run.warnings),
+        "",
+    ]
     width = max(len(m.name) for m in run.metrics)
     lines.append(f"{'metric':{width}}   {'value':>6}  {'n':>9}")
     for m in run.metrics:
@@ -106,6 +112,7 @@ def _run_table(run: EvalRun) -> str:
             "Seconds per page",
             "n/a" if run.seconds is None or not run.pages else f"{run.seconds / run.pages:.1f}",
         ),
+        *_cost_rows(run),
         ("Rejected drafts", str(len(x.rejected))),
         ("Failed sections", str(len(x.failed_sections))),
         ("Linter", _linter(run)),
@@ -117,6 +124,23 @@ def _run_table(run: EvalRun) -> str:
         ]
     cells = "".join(f"<tr><th>{escape(k)}</th><td>{escape(v)}</td></tr>" for k, v in rows)
     return f"<table class=kv>{cells}</table>"
+
+
+def _cost_rows(run: EvalRun) -> list[tuple[str, str]]:
+    c = cost(run.usage)
+    if not c.calls:
+        return [("Cost", "n/a: no model calls recorded")]
+    if c.dollars is None:
+        dollars = per_page = f"unknown: no price for {', '.join(c.unpriced)}"
+    else:
+        dollars = f"${c.dollars:.2f}"
+        per_page = "n/a" if (per := c.per(run.pages)) is None else f"${per:.4f}"
+    return [
+        ("Model calls", str(c.calls)),
+        ("Tokens", f"{c.input_tokens:,} in / {c.output_tokens:,} out"),
+        ("Cost", dollars),
+        ("Cost per page", per_page),
+    ]
 
 
 def _metrics_table(metrics: list[Metric]) -> str:

@@ -25,7 +25,7 @@ from spec2test.judge import (
     write_sample,
 )
 from spec2test.lint import Lint, lint
-from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM
+from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM, cost_line
 from spec2test.schema import Requirement
 from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
 
@@ -361,6 +361,7 @@ def _generate(args: argparse.Namespace) -> int:
         f"{len(result.rejected)} rejected, {result.retried} retried, {len(result.failed)} "
         f"failed, {len(result.unclassified)} unclassified, {len(result.skipped)} skipped"
     )
+    print(cost_line(result.usage, result.pages))
     return 1 if result.failed else 0
 
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from spec2test.generate.context import SourceContext
 from spec2test.judge.rubric import RUBRIC
+from spec2test.llm import TokenUsage
 from spec2test.schema import Requirement, VerificationItem, VerificationItemKind
 
 
@@ -61,6 +62,10 @@ class Judging(_Record):
     warnings: list[str] = Field(default_factory=list)
     judgements: list[Judgement] = Field(default_factory=list)
     failed: list[JudgeFailure] = Field(default_factory=list)
+    pages: int = Field(default=0, description="Source pages the judged items' requirements cite.")
+    usage: list[TokenUsage] = Field(
+        default_factory=list, description="Tokens per model call, for pricing the run."
+    )
 
 
 class HumanLabel(_Record):

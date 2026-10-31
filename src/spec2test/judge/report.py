@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from spec2test.judge.models import Calibration, Judgement, Judging
 from spec2test.judge.rubric import RUBRIC
+from spec2test.llm import cost_line
 from spec2test.schema import VerificationItemKind
 
 
@@ -12,6 +13,7 @@ def quality_report(judging: Judging) -> str:
     lines = [
         f"judge {judging.judge_model}, generator {judging.generator_model}: "
         f"{len(judging.judgements)} items judged, {len(judging.failed)} failed",
+        cost_line(judging.usage, judging.pages),
         *(f"warning: {w}" for w in judging.warnings),
         "",
     ]
@@ -46,6 +48,7 @@ def calibration_report(cal: Calibration) -> str:
     lines = [
         f"judge {cal.judge_model} vs. {labelers}: {cal.labeled} labeled items, "
         f"{cal.unlabeled} unlabeled skipped",
+        cost_line(cal.judging.usage, cal.judging.pages),
         *(f"warning: {w}" for w in cal.warnings),
         "",
     ]

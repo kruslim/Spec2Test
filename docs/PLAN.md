@@ -93,7 +93,7 @@ The eval harness is built in phase 3, before generation is polished. Building me
 | Test-case quality | Rubric-based LLM judge (a different model from the generator), calibrated against your own labels; report judge-human agreement |
 | Label agreement | How often the two labelers agree, before your review; the disagreements are your review list |
 | Acceptance rate | Share of items design partners accept unedited (the production metric) |
-| Cost and latency | Dollars and seconds per page (seconds are recorded today; dollars need token counts from `LLMClient`) |
+| Cost and latency | Dollars and seconds per page. Every `LLMClient` records each call's tokens; `eval`, `generate` and `judge` report dollars per run and per page from the price table in `spec2test/llm/usage.py` (Kimi Code is unpriced: it is billed by subscription) |
 
 Two test layers: deterministic fake-LLM tests on every commit, and a live eval run on every prompt or model change. Reuse the failure-taxonomy approach from Canopy so every miss gets a category, not just a score. A saved run can be rescored without model calls (`spec2test eval <corpus> --rescore results.json`), so fixing a label costs nothing.
 

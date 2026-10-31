@@ -9,12 +9,14 @@ Fixture file format (JSON; one fixture object or a list of them per file):
       "name": "rear-image-timing",          # optional; defaults to the file name
       "schema": "Requirement",              # class name of the requested schema
       "prompt_contains": ["2.0 seconds"],   # optional; every substring must be in the prompt
-      "response": { ... }                   # validated against the requested schema
+      "response": { ... },                  # validated against the requested schema
+      "usage": {"input_tokens": 900, "output_tokens": 120}   # optional; default 0 and 0
     }
 
 A call is answered by the first fixture, in load order, whose `schema` equals the
 requested schema's class name and whose `prompt_contains` substrings all appear in the
-prompt. Files load in sorted file-name order.
+prompt. Files load in sorted file-name order. Every answered call is recorded in
+`FakeLLM.usage` under the fake's `model` name, with the fixture's token counts.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from spec2test.llm.base import LLMClient, LLMError, LLMOutputError
+from spec2test.llm.base import LLMClient, LLMError, LLMOutputError, model_name
 
 
 class FixtureNotFoundError(LLMError):
@@ -40,6 +42,8 @@ class Fixture:
     response: dict[str, Any]
     prompt_contains: tuple[str, ...] = ()
     name: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     def matches(self, prompt: str, schema: type[BaseModel]) -> bool:
         return self.schema == schema.__name__ and all(s in prompt for s in self.prompt_contains)
@@ -52,11 +56,14 @@ class Fixture:
         prompt_contains = data.get("prompt_contains", ())
         if isinstance(prompt_contains, str):
             prompt_contains = (prompt_contains,)
+        usage = data.get("usage", {})
         return cls(
             schema=data["schema"],
             response=data["response"],
             prompt_contains=tuple(prompt_contains),
             name=data.get("name", default_name),
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
         )
 
 
@@ -95,6 +102,7 @@ class FakeLLM(LLMClient):
         self.calls.append(
             LLMCall(prompt=prompt, system=system, schema=schema, fixture=fixture.name)
         )
+        self.record_usage(model_name(self), fixture.input_tokens, fixture.output_tokens)
         try:
             return schema.model_validate(fixture.response)
         except ValidationError as exc:

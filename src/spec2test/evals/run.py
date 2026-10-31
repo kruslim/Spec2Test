@@ -36,13 +36,14 @@ def evaluate(
         sections = [
             s.index for s in doc.sections if in_scope(doc, s, gold.scope) and is_normative(s)
         ]
+    start = len(llm.usage)
     started = perf_counter()
     extraction = extract(doc, llm, sections=sections)
     seconds = perf_counter() - started
     linted = None
     if lint != "off":
         linted = linter.lint(extraction.requirements, llm if lint == "full" else None)
-    return score(
+    run = score(
         gold,
         extraction,
         doc,
@@ -51,6 +52,8 @@ def evaluate(
         seconds=seconds,
         lint=linted,
     )
+    run.usage = llm.usage[start:]
+    return run
 
 
 def rescore(
@@ -64,7 +67,7 @@ def rescore(
     """Score a saved extraction again, without calling a model: after relabeling, say.
 
     The rules run again, so a rule change shows up too; "full" keeps the LLM flags the
-    saved run has, if any.
+    saved run has, if any. A saved run keeps its token counts, so its cost is still shown.
     """
     if isinstance(previous, EvalRun):
         model, seconds, extraction = previous.model, previous.seconds, previous.extraction
@@ -75,7 +78,10 @@ def rescore(
     if lint != "off":
         keep = saved if lint == "full" and saved is not None else Lint()
         linted = linter.relint(extraction.requirements, keep)
-    return score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds, lint=linted)
+    run = score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds, lint=linted)
+    if isinstance(previous, EvalRun):
+        run.usage = previous.usage
+    return run
 
 
 def write_report(run: EvalRun, out_dir: str | Path) -> tuple[Path, Path]:

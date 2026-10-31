@@ -115,6 +115,28 @@ different model (FMVSS 111: Claude Opus 5.5, see `gold/fmvss-111.toml`). The rep
 when the extraction model is from the labeler's model family, and when no person has
 reviewed the gold set yet.
 
+### Cost
+
+Every `LLMClient` records the tokens of each call it makes in `llm.usage` (output tokens
+include thinking tokens; calls that fail after the model answered are counted, since they
+are billed). `eval`, `generate` and `judge` save their own calls with their output
+(`EvalRun.usage`, `Generation.usage`, `Judging.usage`) and print what the run cost:
+
+```text
+cost $0.60 ($0.1500 per page over 4 pages); 12 calls, 100,000 in / 10,000 out tokens
+```
+
+The HTML report shows the calls, tokens, cost and cost per page. The eval spreads the cost
+over the pages its gold set's scope covers and counts extraction and linting both;
+`generate` and `judge` spread it over the source pages their requirements cite. A rescored
+run keeps the saved run's token counts.
+
+Prices are in `spec2test.llm.usage.PRICES`, in USD per million tokens, copied from each
+provider's own pricing page (with the date checked). A model with no entry is not priced:
+the cost is reported as unknown, with the token counts, never guessed. Kimi Code
+(`kimi-for-coding`) has none, since it is billed by subscription plan. FakeLLM fixtures can
+give a call's tokens with `"usage": {"input_tokens": ..., "output_tokens": ...}`.
+
 ## Generate
 
 `spec2test.generate.generate(requirements, llm, doc=...)` writes one `VerificationItem`

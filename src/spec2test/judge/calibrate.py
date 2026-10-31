@@ -17,7 +17,7 @@ import random
 from collections.abc import Iterable
 from pathlib import Path
 
-from spec2test.generate import Generation, SourceContext, source_context
+from spec2test.generate import Generation, SourceContext, pages_cited, source_context
 from spec2test.ingest import Document
 from spec2test.judge.models import (
     Agreement,
@@ -94,7 +94,13 @@ def calibrate(
     judge = model_name(llm) if llm is not None else saved.judge_model
     generators = sorted({s.generator_model for s in labeled})
     warnings = [w for g in generators for w in judge_warnings(judge, g)]
-    judging = Judging(judge_model=judge, generator_model=", ".join(generators), warnings=warnings)
+    judging = Judging(
+        judge_model=judge,
+        generator_model=", ".join(generators),
+        warnings=warnings,
+        pages=pages_cited(s.requirement for s in labeled),
+    )
+    start = 0 if llm is None else len(llm.usage)
 
     found = {} if saved is None else {j.item_id: j for j in saved.judgements}
     graded: list[tuple[CalibrationItem, Judgement]] = []
@@ -111,6 +117,8 @@ def calibrate(
         judging.judgements.append(j)
         graded.append((s, j))
 
+    if llm is not None:
+        judging.usage = llm.usage[start:]
     if judging.failed:
         warnings.append(f"{len(judging.failed)} labeled item(s) could not be judged")
     if not labeled:

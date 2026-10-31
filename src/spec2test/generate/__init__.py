@@ -12,6 +12,7 @@ from spec2test.generate.models import (
     GenerationFailure,
     RejectedItem,
     SkippedRequirement,
+    pages_cited,
 )
 from spec2test.generate.pipeline import (
     KIND_FOR_METHOD,
@@ -33,6 +34,7 @@ __all__ = [
     "check_item",
     "generate",
     "not_verifiable",
+    "pages_cited",
     "references",
     "render",
     "render_context",

@@ -71,6 +71,7 @@ def generate(
     """
     reqs = list(requirements)
     result = Generation(model=model_name(llm), requirements=reqs)
+    start = len(llm.usage)
     for req in reqs:
         if req.verification_method is None:
             result.unclassified.append(req.id)
@@ -80,6 +81,7 @@ def generate(
             continue
         ctx = None if doc is None else source_context(req, doc)
         _generate_one(req, llm, ctx, result)
+    result.usage = llm.usage[start:]
     return result
 
 
