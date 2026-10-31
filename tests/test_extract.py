@@ -272,9 +272,9 @@ def test_cli_extract_with_fake_llm(doc, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "widget-lamp:2.1:1  p2  test" in out
     assert "rejected  2.4" in out
-    assert out.strip().endswith(
-        "5 requirements, 1 rejected, 2 retried, 1 sections failed, 4 skipped"
-    )
+    summary, cost = out.strip().splitlines()[-2:]
+    assert summary == "5 requirements, 1 rejected, 2 retried, 1 sections failed, 4 skipped"
+    assert cost.startswith("cost unknown (no price for FakeLLM); 7 calls")
 
     cli.main(["extract", str(path), "--fake", str(FIXTURES / "llm"), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -282,7 +282,10 @@ def test_cli_extract_with_fake_llm(doc, tmp_path, capsys):
 
 
 @pytest.mark.live
-@pytest.mark.skipif(os.environ.get("SPEC2TEST_LIVE") != "1", reason="set SPEC2TEST_LIVE=1")
+@pytest.mark.skipif(
+    os.environ.get("SPEC2TEST_LIVE") != "1" or not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="set SPEC2TEST_LIVE=1 and ANTHROPIC_API_KEY",
+)
 def test_live_extraction_cites_verbatim_and_splits_compounds(doc):
     result = extract(doc, AnthropicLLM(effort="low"), sections=[doc.section("2.2").index])
     assert len(result.requirements) >= 2

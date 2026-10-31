@@ -31,9 +31,11 @@ from spec2test.judge import (
     CalibrationItem,
     HumanLabel,
     JudgeAnswer,
+    LabelsExistError,
     SameModelError,
     Verdict,
     calibrate,
+    compare,
     judge,
     judge_warnings,
     load_sample,
@@ -230,6 +232,43 @@ def test_a_clause_inside_one_already_sent_is_not_sent_again(outdoor_spec):
     assert [c.anchor for c in references(r, outdoor_spec)] == ["S3"]
 
 
+@pytest.fixture
+def numbered_spec():
+    """Plain-numbered clauses and an annex that restarts its numbering, as in UNECE."""
+    return build_document(
+        "num",
+        [
+            Block("text", "1. SCOPE", 1),
+            Block("text", "1.1 This regulation applies to lamps.", 1),
+            Block("text", "2. REQUIREMENTS", 1),
+            Block("text", "2.1 The lamp shall have 2 bulbs.", 1),
+            Block("text", "2.2 The lamp shall pass the spray test of paragraph 2.1 of Annex 3.", 1),
+            Block("text", "2.3 Each bulb shall be marked as specified in paragraph 1.", 1),
+            Block("text", "2.4 The lamp shall pass Annex 3, paragraph 2.2, and paragraph 2.1.", 1),
+            Block("heading", "Annex 3", 2),
+            Block("text", "Spray test", 2),
+            Block("text", "2.1 Spray the lamp for 10 min.", 2),
+            Block("text", "2.2 Then dry it as in 2.1.", 2),
+        ],
+    )
+
+
+def refs(doc, anchor):
+    text = doc.section(anchor).text.split(" ", 1)[1]
+    return [c.anchor for c in references(cited(doc, anchor, text), doc)]
+
+
+def test_a_bare_number_is_a_reference_only_after_a_clause_word(numbered_spec):
+    assert refs(numbered_spec, "2.1") == []  # "2 bulbs" is not clause 2
+    assert refs(numbered_spec, "2.3") == ["1"]  # "paragraph 1" is
+
+
+def test_annex_clauses_resolve_inside_their_annex(numbered_spec):
+    assert refs(numbered_spec, "2.2") == ["Annex 3 2.1"]  # not the body's 2.1
+    assert refs(numbered_spec, "2.4") == ["Annex 3 2.2", "2.1"]  # then the body's 2.1
+    assert refs(numbered_spec, "Annex 3 2.2") == ["Annex 3 2.1"]  # its own annex first
+
+
 def test_referenced_text_is_capped(outdoor_spec, monkeypatch):
     monkeypatch.setattr(context, "MAX_CONTEXT_CHARS", 40)
     refs = references(cited(outdoor_spec, "S2.1.1", SEALING), outdoor_spec)
@@ -420,6 +459,56 @@ def test_calibration_can_reuse_saved_judgements(generation):
         calibrate(sample)
 
 
+def test_a_saved_judgement_of_a_different_text_is_not_scored(generation):
+    saved = judge(generation, judge_llm())
+    assert all(j.graded for j in saved.judgements)
+    sample = [labeled(s) for s in make_sample(generation, 5)]
+    # Regenerated: the same deterministic id now names an item with another text.
+    first = sample[0]
+    requirement = first.requirement.model_copy(update={"text": "The lamp shall be blue."})
+    sample[0] = first.model_copy(update={"requirement": requirement})
+    result = calibrate(sample, saved=saved)
+    [failed] = result.judging.failed
+    assert failed.item_id == first.item.id and "different text" in failed.error
+    assert sum(a.n for a in result.agreements if a.name == "covers") == 4
+
+    old = saved.model_copy(
+        update={"judgements": [j.model_copy(update={"graded": None}) for j in saved.judgements]}
+    )
+    assert any("no hash" in w for w in calibrate(sample[1:], saved=old).warnings)
+
+
+def test_compare_leaves_out_items_graded_on_different_texts(generation):
+    first, second = judge(generation, judge_llm()), judge(generation, judge_llm("other-judge"))
+    moved = second.judgements[0].model_copy(update={"graded": "0" * 64})
+    second.judgements[0] = moved
+    result = compare(first, second)
+    assert result.compared == len(first.judgements) - 1
+    assert any("different texts" in w for w in result.warnings)
+
+
+def test_a_labeler_named_like_a_model_is_warned_about(generation):
+    sample = [labeled(s) for s in make_sample(generation, 2)]
+    sample[0].human.labeler = "claude-opus-5-5"
+    result = calibrate(sample, judge_llm())
+    assert any("'claude-opus-5-5' looks like a model ID" in w for w in result.warnings)
+
+
+def test_a_sample_with_human_labels_is_not_overwritten(generation, tmp_path):
+    path = tmp_path / "sample.jsonl"
+    write_sample(make_sample(generation, 3), path)
+    write_sample(make_sample(generation, 3), path)  # nothing labeled yet: fine
+    started = make_sample(generation, 3)
+    started[1].human.notes = "half done"
+    write_sample(started, path, force=True)
+    with pytest.raises(LabelsExistError, match="holds human labels on 1 line"):
+        write_sample(make_sample(generation, 3), path)
+    assert load_sample(path)[1].human.notes == "half done"
+    path.write_text("not a sample\n", encoding="utf-8")
+    with pytest.raises(LabelsExistError, match="not a readable sample"):
+        write_sample(make_sample(generation, 3), path)
+
+
 def test_calibration_refuses_the_generator_as_judge(generation):
     sample = [labeled(s) for s in make_sample(generation, 2)]
     with pytest.raises(SameModelError):
@@ -514,14 +603,11 @@ def test_gemini_is_a_preset():
 
 @pytest.mark.live
 @pytest.mark.skipif(
-    os.environ.get("SPEC2TEST_LIVE") != "1"
-    or not os.environ.get("KIMI_CODE_API_KEY")
-    or not os.environ.get("GEMINI_API_KEY"),
-    reason="set SPEC2TEST_LIVE=1, KIMI_CODE_API_KEY and GEMINI_API_KEY",
+    os.environ.get("SPEC2TEST_LIVE") != "1" or not os.environ.get("KIMI_CODE_API_KEY"),
+    reason="set SPEC2TEST_LIVE=1 and KIMI_CODE_API_KEY",
 )
-def test_live_generate_with_kimi_and_judge_with_gemini():
+def test_live_generate_with_kimi():
+    # No judge step: Gemini judges only the calibration sample, and Opus judges in sessions.
     result = generate([TIMING], OpenAICompatLLM.preset("kimi-code"))
     [item] = result.items
     assert item.kind is VerificationItemKind.TEST_CASE and "2.0" in item.fields.pass_criterion
-    judging = judge(result, OpenAICompatLLM.preset("gemini"))
-    assert len(judging.judgements) == 1 and not judging.warnings

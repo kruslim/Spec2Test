@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from spec2test.extract import CitationError, check_citation, locate, section_at
 from spec2test.ingest import Document, Section
 from spec2test.schema import Requirement
+from spec2test.textio import read_text
 
 DEFAULT_DIR = Path("gold")
 
@@ -72,7 +73,7 @@ def load_gold(path: str | Path, doc: Document) -> GoldSet:
     scope = meta.scope
     requirements: list[Requirement] = []
     ids: dict[str, int] = {}
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for n, line in enumerate(read_text(path).splitlines(), start=1):
         if not line.strip():
             continue
         where = f"{path.name}:{n}"

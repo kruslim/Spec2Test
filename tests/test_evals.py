@@ -25,6 +25,7 @@ from spec2test.evals import (
     load_gold,
     rescore,
     score,
+    text_sha256,
 )
 from spec2test.evals.score import (
     CONDITIONS_ACCURACY,
@@ -397,12 +398,35 @@ def test_every_miss_has_a_category(run):
     assert all(isinstance(f.category, FailureCategory) and f.detail for f in run.failures)
 
 
+def test_gold_flags_on_missed_records_are_counted_in_a_warning(doc):
+    flag = {"kind": "vague_term", "reason": "'one hand' has no force limit"}
+    switch = req(doc, "g1", "2.3", "The switch shall be operable with one hand.")
+    switch = switch.model_copy(update={"testability_flags": [TestabilityFlag(**flag)]})
+    run = scored(doc, [switch], [])
+    [warning] = [w for w in run.warnings if "gold flag" in w]
+    assert warning.startswith("1 gold flag(s) sit on 1 requirement(s) the extraction missed")
+    assert run.metric(FLAG_RECALL).denominator == 0
+
+
 def test_rescoring_a_saved_run_calls_no_model(doc, gold, run):
     saved = EvalRun.model_validate_json(run.model_dump_json())
     again = rescore(doc, gold, saved, corpus="widget-lamp")
     assert again.metrics == run.metrics
     assert (again.model, again.seconds) == (run.model, run.seconds)
     assert rescore(doc, gold, run.extraction, corpus="x").model == "saved extraction"
+
+
+def test_rescoring_warns_when_the_document_text_changed(doc, gold, run):
+    saved = EvalRun.model_validate_json(run.model_dump_json())
+    assert saved.doc_sha256 == text_sha256(doc)
+    assert not any("document text" in w for w in rescore(doc, gold, saved, corpus="w").warnings)
+
+    shifted = saved.model_copy(update={"doc_sha256": "0" * 64, "docling": "1.0.0"})
+    [warning] = [w for w in rescore(doc, gold, shifted, corpus="w").warnings if "text" in w]
+    assert "differs" in warning and "Docling 1.0.0 then" in warning
+
+    old = saved.model_copy(update={"doc_sha256": None})  # saved before runs had the hash
+    assert any("did not record" in w for w in rescore(doc, gold, old, corpus="w").warnings)
 
 
 def test_rescoring_reruns_the_rules_and_keeps_the_saved_llm_flags(doc, gold, run):

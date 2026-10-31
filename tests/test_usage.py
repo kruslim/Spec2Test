@@ -83,10 +83,11 @@ def test_a_provider_prefix_finds_the_price():
 def test_cost_line():
     line = cost_line(calls("claude-opus-5-5", (100_000, 10_000)), 4)
     assert (
-        line
-        == "cost $0.60 ($0.1500 per page over 4 pages); 1 calls, 100,000 in / 10,000 out tokens"
+        line == "cost $0.60 ($0.1500 per page over 4 cited pages); "
+        "1 calls, 100,000 in / 10,000 out tokens"
     )
     assert cost_line([], 4) == "cost: no model calls recorded"
+    assert "over 4 scope pages" in cost_line(calls("claude-opus-5-5", (10, 10)), 4, "scope")
 
 
 # Clients
@@ -205,6 +206,17 @@ def test_openai_compat_without_usage_records_nothing(monkeypatch):
 # Pipelines
 
 
+def test_extract_and_lint_save_their_own_calls(widget_lamp):
+    llm = metered("claude-opus-5-5")
+    extraction = extract(widget_lamp, llm)
+    linted = lint(extraction.requirements, llm)
+    assert extraction.usage and linted.usage
+    assert extraction.usage + linted.usage == llm.usage
+    saved = type(extraction).model_validate_json(extraction.model_dump_json())
+    assert cost(saved.usage).dollars == cost(extraction.usage).dollars > 0
+    assert lint(extraction.requirements).usage == []  # the rules alone call no model
+
+
 def test_generate_and_judge_save_their_own_calls(widget_lamp):
     generator = metered("claude-sonnet-5-5")
     linted = lint(extract(widget_lamp, generator).requirements, generator).requirements
@@ -232,9 +244,9 @@ def test_eval_prices_extraction_and_linting(widget_lamp, tmp_path):
     assert dollars == pytest.approx(len(run.usage) * (1000 * 4 + 100 * 20) / 1e6)
 
     text = evals.text_report(run)
-    assert f"cost ${dollars:.2f}" in text and f"over {run.pages} pages" in text
+    assert f"cost ${dollars:.2f}" in text and f"over {run.pages} scope pages" in text
     html = evals.html_report(run)
-    assert "Cost per page" in html and f"${dollars / run.pages:.4f}" in html
+    assert "Cost per scope page" in html and f"${dollars / run.pages:.4f}" in html
 
     again = rescore(widget_lamp, gold, run, corpus="widget-lamp")
     assert again.usage == run.usage

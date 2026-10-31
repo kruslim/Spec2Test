@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from spec2test.llm.usage import TokenUsage
 from spec2test.schema import Requirement, TestabilityFlag, TestabilityFlagKind
 
 
@@ -62,3 +63,6 @@ class Lint(_Record):
     )
     rejected: list[RejectedFlag] = Field(default_factory=list)
     failed: list[LintFailure] = Field(default_factory=list)
+    usage: list[TokenUsage] = Field(
+        default_factory=list, description="Tokens per model call, for pricing the run."
+    )

@@ -21,7 +21,7 @@ stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase
 
 - Install: `uv sync`
 - Lint: `uv run ruff check .` and `uv run ruff format --check .`
-- Test: `uv run pytest` (offline; the live test needs `SPEC2TEST_LIVE=1`, the gold-set
+- Test: `uv run pytest` (offline; the live tests need `SPEC2TEST_LIVE=1` and `-m live`, the gold-set
   corpora test needs `SPEC2TEST_CORPORA=1` and the documents in `corpora/`)
 - One test file: `uv run pytest tests/test_lint.py -q`
 - Offline pipeline run: any stage with `--fake tests/fixtures/llm`

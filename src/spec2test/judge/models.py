@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from spec2test.generate.context import SourceContext
@@ -43,12 +46,24 @@ class Judgement(BaseModel):
     kind: VerificationItemKind
     verdicts: dict[str, Verdict]
     acceptable: bool
+    graded: str | None = Field(
+        default=None,
+        description="`graded_hash` of the requirement and item judged: a judgement only "
+        "counts for the same text. None in judgings saved before it was recorded.",
+    )
 
     @computed_field
     @property
     def score(self) -> float:
         """Share of rubric criteria passed."""
         return sum(v.passed for v in self.verdicts.values()) / len(self.verdicts)
+
+
+def graded_hash(requirement: Requirement, item: VerificationItem) -> str:
+    """sha256 of everything a judge sees of one item but its source context. Item ids are
+    deterministic, so a regenerated item keeps its id; this tells the two apart."""
+    data = [requirement.model_dump(mode="json"), item.model_dump(mode="json")]
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 class JudgeFailure(_Record):
@@ -78,6 +93,16 @@ class HumanLabel(_Record):
     )
     acceptable: bool | None = None
     notes: str = ""
+
+    @property
+    def started(self) -> bool:
+        """Whether a person has filled in any of it."""
+        return (
+            self.labeler is not None
+            or self.acceptable is not None
+            or any(v is not None for v in self.verdicts.values())
+            or bool(self.notes.strip())
+        )
 
     @property
     def complete(self) -> bool:

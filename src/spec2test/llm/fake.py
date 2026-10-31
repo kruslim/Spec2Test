@@ -30,6 +30,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from spec2test.llm.base import LLMClient, LLMError, LLMOutputError, model_name
+from spec2test.textio import read_text
 
 
 class FixtureNotFoundError(LLMError):
@@ -86,7 +87,7 @@ class FakeLLM(LLMClient):
     def from_dir(cls, path: str | Path, *, model: str | None = None) -> FakeLLM:
         fixtures: list[Fixture] = []
         for file in sorted(Path(path).glob("*.json")):
-            data = json.loads(file.read_text(encoding="utf-8"))
+            data = json.loads(read_text(file))
             entries = data if isinstance(data, list) else [data]
             fixtures.extend(Fixture.from_dict(entry, default_name=file.stem) for entry in entries)
         return cls(fixtures, model=model)

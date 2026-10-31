@@ -59,7 +59,9 @@ def cell(value: Value, column: str) -> str:
 
 
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
-_NUMBER = re.compile(r"[-+]?\d[\d.,]*(\s[^=+\-@(]*)?")
+_NUMBER = re.compile(r"[-+]?\d[\d.,]*(?:\s+[\w°%µ±/.]+)*")
+"""A signed number and plain unit words ('-40 °C', '+5 V'); nothing a formula needs, such
+as '|', '!', '(' or a quote, so "-1 cmd|' /C calc'!A0" does not pass for one."""
 
 
 def _defuse(text: str) -> str:

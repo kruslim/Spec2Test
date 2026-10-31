@@ -30,8 +30,10 @@ def lint(requirements: Iterable[Requirement], llm: LLMClient | None = None) -> L
     ruled = [_with_flags(r, lint_rules(r)) for r in requirements]
     result = Lint(requirements=ruled, llm_pass=llm is not None)
     if llm is not None:
+        start = len(llm.usage)
         for section, batch in _batches(ruled):
             _lint_batch(section, batch, llm, result)
+        result.usage = llm.usage[start:]
     result.requirements = [_with_llm_flags(r, result.llm_flags) for r in ruled]
     return result
 

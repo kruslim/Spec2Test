@@ -138,13 +138,17 @@ def _run_panel(store: ReviewStore, doc: Document, fake_dir: str | None) -> None:
     model = st.text_input("Model", placeholder="the provider's default")
     llm = _llm(provider, model or None, fake_dir)
     paid = provider != FAKE
+    # A new key per run: the tick starts cleared, so every paid run is confirmed anew.
+    runs = st.session_state.get("runs", 0)
     confirmed = not paid or st.checkbox(
-        f"Run {model_name(llm)} on every section and requirement. This calls a paid API."
+        f"Run {model_name(llm)} on every section and requirement. This calls a paid API.",
+        key=f"paid-ok-{runs}",
     )
     if st.button("Run the pipeline", type="primary", disabled=not confirmed):
         with st.status("Running the pipeline", expanded=True) as status:
             result = run_pipeline(doc, llm, progress=lambda stage: st.write(f"{stage}…"))
             status.update(label="Pipeline done", state="complete")
+        st.session_state.runs = runs + 1
         st.session_state.last_run = f"{model_name(llm)}: {result.cost()}"
         _opened(store.add(result.generation, doc))
 

@@ -18,7 +18,14 @@ Every offset points into `Document.text`, so a later stage can check a quote ver
 ```bash
 uv run spec2test ingest path/to/spec.pdf          # outline: page, clause, title
 uv run spec2test ingest path/to/spec.pdf --json   # the whole Document
+uv run spec2test ingest path/to/spec.pdf --out doc.json   # saved as UTF-8
 ```
+
+Every command with `--json` also takes `--out FILE`, which writes the same JSON to FILE
+as UTF-8. Use it to save output: on Windows, `>` in PowerShell 5.1 writes UTF-16 and
+PowerShell 7 re-encodes through the console code page. Printed JSON escapes non-ASCII
+characters (`§` for `§`), so a redirect cannot mangle it, and every loader also
+accepts a byte order mark and UTF-16.
 
 Each format is read by an input adapter (`spec2test plugins` lists them); `--adapter NAME`
 reads a file with a given one whatever its suffix. A plugin can add more formats; see
@@ -79,7 +86,7 @@ flag has a kind (`vague_term`, `missing_unit`, `missing_condition`, `compound`,
   that does not lands in `Lint.rejected`.
 
 ```bash
-uv run spec2test extract spec.pdf --json > extraction.json
+uv run spec2test extract spec.pdf --out extraction.json
 uv run spec2test lint extraction.json                # rules and LLM pass, Kimi Code
 uv run spec2test lint extraction.json --rules-only   # no model calls
 ```
@@ -112,7 +119,10 @@ the shorter quote, and each record aligns at most once. The metrics:
 | Method accuracy | aligned pairs with a gold method | equal |
 | Flag precision / recall | testability flag kinds on aligned pairs | same kind raised |
 
-Flag precision and recall are also reported per kind. Rescoring runs the lint rules again,
+Flag precision and recall are also reported per kind. They count aligned pairs only, so
+they measure the linter on the records extraction got, apart from extraction recall: a
+gold flag on a missed requirement and a flag on an extra record are not scored, and the
+run warns how many gold flags went unscored that way. Rescoring runs the lint rules again,
 so a rule change can be measured on a saved run for free; the saved run's LLM flags are
 kept.
 
@@ -134,17 +144,21 @@ lowers recall without saying anything about the model, so run again before quoti
 
 Every `LLMClient` records the tokens of each call it makes in `llm.usage` (output tokens
 include thinking tokens; calls that fail after the model answered are counted, since they
-are billed). `eval`, `generate` and `judge` save their own calls with their output
-(`EvalRun.usage`, `Generation.usage`, `Judging.usage`) and print what the run cost:
+are billed). Every stage saves its own calls with its output (`Extraction.usage`,
+`Lint.usage`, `EvalRun.usage`, `Generation.usage`, `Judging.usage`) and prints what the run
+cost:
 
 ```text
-cost $0.60 ($0.1500 per page over 4 pages); 12 calls, 100,000 in / 10,000 out tokens
+cost $0.60 ($0.1500 per page over 4 cited pages); 12 calls, 100,000 in / 10,000 out tokens
 ```
 
-The HTML report shows the calls, tokens, cost and cost per page. The eval spreads the cost
-over the pages its gold set's scope covers and counts extraction and linting both;
-`generate` and `judge` spread it over the source pages their requirements cite. A rescored
-run keeps the saved run's token counts.
+The HTML report shows the calls, tokens, cost and cost per page. The page counts differ by
+command, and each line names its own: the eval spreads the cost over the pages its gold
+set's scope covers ("scope pages") and counts extraction and linting both; `extract`,
+`lint`, `generate` and `judge` spread it over the source pages their requirements cite
+("cited pages"). Per-page costs on the two bases do not add up. `extract --json` and
+`lint --json` save their calls too (`Extraction.usage`, `Lint.usage`), so a standalone run
+can be priced afterwards. A rescored run keeps the saved run's token counts.
 
 Prices are in `spec2test.llm.usage.PRICES`, in USD per million tokens, copied from each
 provider's own pricing page (with the date checked). A model with no entry is not priced:
@@ -175,7 +189,11 @@ a document is given it also gets the requirement's source context
 - the definitions-section entries for the terms it uses ("Backing event means ...");
 - the clauses it references, each with its subclauses ("tested in accordance with
   S14.1"; "S5.5.1 through S5.5.7" sends all seven). Up to 12 clauses, 16,000 characters
-  each and 40,000 in all; a clause inside one already sent is not sent twice.
+  each and 40,000 in all; a clause inside one already sent is not sent twice. A token
+  counts as a reference when it reads as a clause number ("S5", "T.1.2", "5.1.1"); a bare
+  number only after a word such as "paragraph" or "clause", so "2 bulbs" is not clause 2.
+  Annexes restart their numbering: "paragraph 2.1 of Annex 3" and "Annex 3, paragraph
+  2.1" name the annex's 2.1, and a bare "2.1" inside an annex means that annex's own.
 
 Values and limits the source does not give go in [brackets], never invented; the
 procedure is the model's to write when the source gives none. Every item is checked: its
@@ -192,7 +210,7 @@ measurable criterion is always kept.
 
 ```bash
 uv run spec2test generate lint.json --corpus fmvss-111          # live, Kimi Code
-uv run spec2test generate eval-reports/fmvss-111/<run>/results.json --corpus fmvss-111 --json > generation.json
+uv run spec2test generate eval-reports/fmvss-111/<run>/results.json --corpus fmvss-111 --out generation.json
 ```
 
 The input is an Extraction, a Lint or an eval run's `results.json` (its in-scope records,
@@ -234,7 +252,8 @@ the item, under a key) and exits 1. In a Claude Code session, Opus answers each 
 and appends `{"key": ..., "response": {...}}` lines to `opus.jsonl`
 (`.claude/skills/session-judge`). The second pass, the same command, reads the answers and
 prints the scores; a request still unanswered, or an answer that does not fit the schema,
-is a failed item, and only the requests still missing are written again. The key hashes
+is a failed item, and only those requests are written again, each refused answer with its
+validation error in `error`. The key hashes
 the whole prompt, so an answer never answers a changed prompt. `spec2test.llm.SessionLLM`
 does this for any stage, behind the same `LLMClient` interface.
 
@@ -248,8 +267,12 @@ uv run spec2test calibrate compare opus-judging.json gemini-sample.json   # no m
 
 `compare` reports, over the items both judged, the agreement and Cohen's kappa per
 criterion and for `acceptable`, and each disagreement with both judges' reasons. It warns
-when both judges are from one model family. Agreement between two models only says where
-to look; agreement with a person (below) is what makes the judge's numbers count.
+when both judges are from one model family. Every judgement stores a hash of the
+requirement and item it graded (`Judgement.graded`): item ids are deterministic, so an item
+regenerated under the same id is left out of the comparison, with a warning, instead of
+being scored against the other judge's grade of the old text. Agreement between two
+models only says where to look; agreement with a person (below) is what makes the judge's
+numbers count.
 
 ### Calibration
 
@@ -267,7 +290,13 @@ its requirement and source context, so the person and the judge see the same thi
 `score` judges the labeled lines (lines without a complete label are skipped and counted)
 and reports, per criterion and for `acceptable`, the judge-human agreement, Cohen's kappa
 and every disagreement with the judge's reason. The labels must come from a person: a
-model's labels would only measure two models agreeing.
+model's labels would only measure two models agreeing, so a `labeler` named like a model
+ID gets a warning. Saved judgements (`--judgements`) count only for the text they graded:
+a line whose requirement or item changed since is reported as failed, not scored.
+
+`sample` never overwrites a file that holds human labels, or one it cannot read as a
+sample: the labels are a person's work and no command can make them again. Write the new
+sample elsewhere, or pass `--force`.
 
 ## Trace
 
@@ -381,9 +410,14 @@ uv run spec2test export generation.json --db review.sqlite \
 uv run spec2test export --db review.sqlite --generation 258ba75d --format xlsx --out items.xlsx
 ```
 
-- **Review decisions**: with `--db`, edits replace the generated fields and rejected items
-  stay out (the profile's `output.statuses` picks which statuses go out). The Generation
-  must be the one reviewed; a regenerated one has no decisions yet.
+- **Review decisions**: with `--db`, edits replace the generated fields and only accepted
+  and edited items go out, unless the profile's `output.statuses` lists others (such as
+  `unreviewed`): unreviewed model output never ships next to reviewed items unasked.
+  Without `--db` every item is unreviewed and all of them go out. The Generation must be
+  the one reviewed; a regenerated one has no decisions yet.
+- **Saving**: `--out FILE` writes the file as the exporter encodes it and refuses to
+  replace an existing one unless `--force` is passed. Use it on Windows: printing a CSV and
+  redirecting it with `>` drops the byte-order mark and PowerShell re-encodes the text.
 - **Columns**: identity and trace (`id`, `kind`, `requirements`, `section`, `page`,
   `method`, `strength`, `requirement`, `quote`), what to do and what passes for any kind
   (`actions`, `acceptance`), each kind's own fields (`inspect`, `steps`, `equipment`,
@@ -391,7 +425,8 @@ uv run spec2test export --db review.sqlite --generation 258ba75d --format xlsx -
   `spec2test.export.COLUMNS` lists them with their default labels.
 - **CSV** has a UTF-8 byte-order mark, so spreadsheet programs show '§' and '±'. **XLSX**
   writes every cell as text, and CSV puts a `'` before a cell that would start a formula
-  (`=`, `+`, `-`, `@`, unless it is a plain signed number such as `-40 °C`), so nothing an
+  (`=`, `+`, `-`, `@`, unless it is a signed number with plain unit words such as `-40 °C`;
+`-1 cmd|' /C calc'!A0` is not one), so nothing an
   item says runs in a spreadsheet. The **Markdown** checklist has one box per item,
   grouped by section. **YAML** keys each item by column name and keeps lists as lists.
 
@@ -508,12 +543,15 @@ uv run pytest
 ```
 
 Tests run offline against `FakeLLM`, which replays the fixtures in `tests/fixtures/llm/`.
-To also run the live tests (costs money; needs `ANTHROPIC_API_KEY`, `KIMI_CODE_API_KEY` and
-`GEMINI_API_KEY`):
+To also run the live tests (they call Kimi with `KIMI_CODE_API_KEY`, and Claude with
+`ANTHROPIC_API_KEY`; none calls Gemini):
 
 ```bash
 SPEC2TEST_LIVE=1 uv run pytest -m live
 ```
+
+Both are needed: without `-m live` the live tests are skipped even when `SPEC2TEST_LIVE=1`
+is set in the shell, and Claude Code asks before any `pytest` command that names `live`.
 
 To also parse the four gold-set documents (they must be in `corpora/` first):
 

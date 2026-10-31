@@ -29,9 +29,11 @@
     ],
     "ask": [
       "Bash(SPEC2TEST_LIVE=1 *)",
+      "Bash(uv run pytest *live*)",
       "Bash(git push *)",
       "Bash(git add -f *)",
       "Bash(git add --force *)",
+      "PowerShell(uv run pytest *live*)",
       "PowerShell(git push *)",
       "PowerShell(git add -f *)",
       "PowerShell(git add --force *)"

@@ -24,6 +24,9 @@ eval-reports/
 
 # Review logs store the whole source document; they never go in git.
 *.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # Gold sets for documents that stay out of git (corpora/manifest.toml, licence).
 gold/unece-r158.*

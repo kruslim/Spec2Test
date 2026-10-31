@@ -146,7 +146,10 @@ class Echo(BaseModel):
 
 
 @pytest.mark.live
-@pytest.mark.skipif(os.environ.get("SPEC2TEST_LIVE") != "1", reason="set SPEC2TEST_LIVE=1")
+@pytest.mark.skipif(
+    os.environ.get("SPEC2TEST_LIVE") != "1" or not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="set SPEC2TEST_LIVE=1 and ANTHROPIC_API_KEY",
+)
 def test_live_structured_output():
     result = AnthropicLLM(effort="low").generate("Reply with the word 'ready'.", Echo)
     assert result.word.strip().lower().strip(".'\"") == "ready"
