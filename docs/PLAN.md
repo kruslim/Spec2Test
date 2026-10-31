@@ -115,7 +115,7 @@ The audit of Phases 0-8 (report: https://claude.ai/artifact/6dPB5SHHwDYkbo7cyepY
 
 ## Phased build
 
-Ten phases, roughly 6–8 weeks at evening pace (estimate). Run each phase as one Claude Code session, review the diff, make sure tests pass, then commit. Each commit is your rollback point.
+Ten phases, roughly 6–8 weeks at evening pace (estimate), plus Phase 10, added on Oct 31, 2026 once Phases 0–9 were built. Run each phase as one Claude Code session, review the diff, make sure tests pass, then commit. Each commit is your rollback point.
 
 **Stack:** Python + uv, Pydantic for the schema, Docling for PDF/DOCX/XLSX parsing, a provider-agnostic LLM interface (Kimi by default, Anthropic and any OpenAI-compatible endpoint, plus a fake model for offline tests), SQLite to start, Streamlit for the v1 review UI.
 
@@ -214,6 +214,16 @@ Deploy the app to a managed host with authentication, per-workspace data isolati
 ```
 
 Status (Oct 31, 2026): built, not yet deployed. `spec2test deploy serve CONFIG` runs the review app for design partners behind OpenID Connect sign-in (`st.login`, the `deploy` extra; any provider, settings from `SPEC2TEST_AUTH_*`). A TOML config lists each workspace and its members' emails; each workspace gets its own folder and review log, the app opens only the signed-in member's, and an uninvited email sees only the data-handling page. *Your data* shows the workspace's documents processed, items reviewed, acceptance rate and the month's model use, and deletes all its documents, items and decisions after the member types its id (`deploy delete` does the same for the operator). Every run calls the one model the config names through `CappedLLM`, which logs each call's tokens to a usage ledger (no document text) and refuses calls once the month's dollars or tokens reach the cap, over all workspaces; `kimi-for-coding` has no price, so it needs a token cap. `deploy metrics` lists every workspace. The data-handling page is readable before sign-in and shows [brackets] for any fact the config leaves out. A `Dockerfile` and `fly.toml` (2 CPU, 4 GB, a volume at `/data`, stops when idle) and the runbook in `docs/DEPLOY.md` cover hosting. Shown offline with AppTest, sign-in faked: a member runs, reviews and deletes in their own workspace, cannot open another's review, an uninvited email gets nothing, and a spent budget blocks runs. Not shown yet: a real sign-in and a partner using it, which need the host, an OIDC client and the Kimi key set up (docs/DEPLOY.md). Nothing measured.
+
+### Phase 10 — Full-pipeline eval and dashboard
+
+Done when: one dashboard shows every saved eval, judging, calibration and review with run-to-run spread, and FMVSS 111 has been run end to end with the current model roles (Kimi extracts and generates, Opus judges in a session).
+
+```text
+Add `spec2test dashboard`: read saved eval runs, judgings, calibrations, judge comparisons and review logs, and show their metrics over time per corpus, with the spread over repeated runs of one code version, how each judge was called (session or API) and the acceptance rate. No model calls. Record the code version on every eval run and judging. Then run FMVSS 111 end to end: a live Kimi eval and generation, and an Opus session judging of every item.
+```
+
+Status (Oct 31, 2026): built, and FMVSS 111 run end to end. `spec2test dashboard` reads the `.json` files under `eval-reports/` (or the folders given) and a review log (`--db`), prints the tables and writes `eval-reports/dashboard.html`: extraction metrics per corpus and run, the spread (lowest to highest) over runs of one corpus, model and code version, judge acceptance and rubric pass rates per item kind with how the judge was called, judge-human and judge-judge agreement on "acceptable", and review acceptance. Eval runs and judgings now record `code_version` (package version and git commit); judgings record `provider` (`session` or the API provider) and `created`. Older files load and are listed, but stay out of spreads. Measured (cloud runs, code 00d8a8e plus this phase's uncommitted changes, extraction code unchanged): three live Kimi (`kimi-for-coding`) evals on FMVSS 111 gave recall 94.9–100%, precision 94.9–95.1%, field accuracy 64.1–76.9%, type accuracy 84.6–87.2%, method accuracy 81.1–84.6%, flag precision 56.2–69.2% and flag recall 81.8–90.9%; the 94.9% recall run had one failed extraction call, so its recall is understated. Kimi generated 39 items from the first run (18 test cases, 12 evidence items, 9 checklist items; none rejected or failed, 2 requirements skipped as not verifiable). Claude Opus 5.5 judged all 39 in a Claude Code session (no API spend): 76.9% acceptable unedited (test cases 77.8%, evidence 83.3%, checklists 66.7%), 92.3% of rubric criteria passed. This is a session judge, uncalibrated until the 30-item human labels exist, and not comparable with Gemini's 64.9% (different judge, generator run and rubric wording). Tokens: 406,395 over the four Kimi runs (247,268 in / 159,127 out); Kimi Code is billed by subscription, so no dollar cost. The gold set's newer flags are still unreviewed.
 
 ## Design partners
 

@@ -29,7 +29,7 @@ from spec2test.judge.models import (
     Judging,
     graded_hash,
 )
-from spec2test.judge.pipeline import judge_item, judge_warnings
+from spec2test.judge.pipeline import judge_item, judge_warnings, run_record
 from spec2test.judge.rubric import RUBRIC
 from spec2test.llm import LLMClient, LLMError, model_name
 from spec2test.textio import read_text
@@ -124,6 +124,11 @@ def calibrate(
         generator_model=", ".join(generators),
         warnings=warnings,
         pages=pages_cited(s.requirement for s in labeled),
+        **(
+            run_record(llm)
+            if llm is not None
+            else {k: getattr(saved, k) for k in ("provider", "created", "code_version")}
+        ),
     )
     start = 0 if llm is None else len(llm.usage)
 
@@ -234,6 +239,7 @@ def judge_sample(sample: list[CalibrationItem], llm: LLMClient) -> Judging:
         generator_model=", ".join(generators),
         warnings=[w for g in generators for w in judge_warnings(judge, g)],
         pages=pages_cited(s.requirement for s in sample),
+        **run_record(llm),
     )
     start = len(llm.usage)
     for s in sample:

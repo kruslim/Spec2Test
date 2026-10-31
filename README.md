@@ -397,6 +397,42 @@ reviewed items accepted unedited, overall, per item kind and per verification me
 Edited items count as reviewed but not accepted. Review decisions are not judge labels:
 nothing here writes to `gold/judge/`.
 
+## Dashboard
+
+`spec2test dashboard` puts every saved run in one view, with no model calls. It reads the
+`.json` files under the folders given (default `eval-reports/`) and keeps the eval runs
+(`results.json`), judgings (`judge --json`), judge-human calibrations (`calibrate score
+--json`) and judge comparisons (`calibrate compare --json`); `--db` adds a review log's
+acceptance rate. It prints the tables and writes `eval-reports/dashboard.html` (`--html`
+to change it; `--json` or `--out FILE` for the whole Dashboard).
+
+```bash
+uv run spec2test dashboard                                  # eval-reports/, every run
+uv run spec2test dashboard eval-reports/fmvss-111 --db review.sqlite
+```
+
+- **Extraction**, per corpus, oldest run first: recall, precision, field, type and method
+  accuracy, flag precision and recall, and cost per scope page, with each run's model, code
+  version and warnings. Hover a cell for its counts.
+- **Spread**: runs of one corpus, model and code version, repeated, give each metric's
+  lowest and highest value. That is the run-to-run noise (Kimi accepts temperature 1
+  only), so a change that lands inside it has not been shown to help. Every run records
+  its code version (`EvalRun.code_version`: the package version and git commit, `.dirty`
+  with uncommitted changes; dirty runs of one commit group together, so keep the
+  extraction code unchanged between them); runs saved before that are listed but left out
+  of spreads.
+- **Judging**: acceptance and rubric pass rates, overall and per item kind, with the judge,
+  the generator and how the judge was called (`Judging.provider`: `session` for a Claude
+  Code session, with no API spend, or the API provider). Judgings saved before the provider
+  was recorded show `[unknown]` and sort by file time.
+- **Agreement** on `acceptable`: judge versus person (calibration) and judge versus judge
+  (comparison), with Cohen's kappa. Judge scores stay uncalibrated until a judge-human row
+  exists.
+- **Review acceptance**: reviewed items accepted unedited, per review log.
+
+A JSON file that looks like one of these but does not load is listed as skipped, with the
+reason; any other JSON is ignored.
+
 ## Export
 
 `spec2test export` writes the items for one customer, in the format, ID scheme and words

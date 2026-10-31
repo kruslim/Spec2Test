@@ -7,12 +7,15 @@ judging with another model of its family runs, with a warning.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from spec2test.generate import Generation, SourceContext, pages_cited, source_context
 from spec2test.ingest import Document
 from spec2test.judge.models import JudgeAnswer, JudgeFailure, Judgement, Judging, graded_hash
 from spec2test.judge.prompts import SYSTEM, judge_prompt
-from spec2test.llm import LLMClient, LLMError, model_family, model_name
+from spec2test.llm import LLMClient, LLMError, model_family, model_name, provider_name
 from spec2test.schema import Requirement, VerificationItem
+from spec2test.version import code_version
 
 
 class SameModelError(ValueError):
@@ -29,6 +32,7 @@ def judge(generation: Generation, llm: LLMClient, *, doc: Document | None = None
         judge_model=model_name(llm),
         generator_model=generation.model,
         warnings=judge_warnings(model_name(llm), generation.model),
+        **run_record(llm),
     )
     requirements = {r.id: r for r in generation.requirements}
     result.pages = pages_cited(requirements[i.requirement_ids[0]] for i in generation.items)
@@ -42,6 +46,15 @@ def judge(generation: Generation, llm: LLMClient, *, doc: Document | None = None
             result.failed.append(JudgeFailure(item_id=item.id, error=str(exc)))
     result.usage = llm.usage[start:]
     return result
+
+
+def run_record(llm: LLMClient) -> dict[str, str]:
+    """The `Judging` fields that say how, when and by which code a judging ran."""
+    return {
+        "provider": provider_name(llm),
+        "created": datetime.now(UTC).isoformat(timespec="seconds"),
+        "code_version": code_version(),
+    }
 
 
 def judge_item(
