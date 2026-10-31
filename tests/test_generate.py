@@ -130,6 +130,20 @@ def test_prompt_carries_criteria_conditions_and_flags(linted, fake_llm, widget_l
     assert all(c.system == GENERATE_SYSTEM for c in fake_llm.calls if c.schema is EvidenceFields)
 
 
+def test_a_checklist_prompt_keeps_the_verdict_to_the_requirement():
+    """The checklist rules from the Phase 10 failures: no marking or document as a pass
+    condition, another clause's result as an input, no judgment left to the inspector."""
+    r = req("Each lamp whose housing does not meet 4.2 shall have a red lens.",
+            verification_method="inspection")  # fmt: skip
+    llm = FakeLLM([fixture(ChecklistFields, {"inspect": "The lens.", "pass_condition": "Red."})])
+    generate([r], llm)
+    [call] = llm.calls
+    assert "Write a checklist item" in call.prompt
+    assert "never make a marking, label, document or appearance a pass condition" in call.prompt
+    assert "take that clause's verification result" in call.prompt
+    assert "Never leave a judgment to the inspector" in call.prompt
+
+
 def test_a_verdict_without_the_criterion_value_is_sent_back_once():
     llm = FakeLLM(
         [

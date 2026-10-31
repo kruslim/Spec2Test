@@ -196,7 +196,12 @@ a document is given it also gets the requirement's source context
   2.1" name the annex's 2.1, and a bare "2.1" inside an annex means that annex's own.
 
 Values and limits the source does not give go in [brackets], never invented; the
-procedure is the model's to write when the source gives none. Every item is checked: its
+procedure is the model's to write when the source gives none. A checklist item's pass
+condition is the requirement's own criterion: how the inspector tells (a straightedge, a
+drawing, a data sheet) goes in what to inspect, and a marking or document is never a pass
+condition unless the requirement asks for one. A condition or exception that turns on
+another clause's measurement ("whose inside mirror does not meet S5.1.1") is taken from
+that clause's verification result, not judged by eye. Every item is checked: its
 verdict (pass condition, pass criterion or acceptance criterion) must state each criterion
 value the requirement has, and a demonstration needs a procedure. An item that fails goes
 back to the model once with the errors, then lands in `Generation.rejected`.
