@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import os
+import subprocess
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -26,6 +29,7 @@ from spec2test.judge import (
 )
 from spec2test.lint import Lint, lint
 from spec2test.llm import PRESETS, AnthropicLLM, FakeLLM, LLMClient, OpenAICompatLLM, cost_line
+from spec2test.review import APP, DEFAULT_DB, ReviewStore, stats_report
 from spec2test.schema import Requirement
 from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
 
@@ -158,6 +162,27 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", help="list unchanged requirements too")
     p.add_argument("--json", action="store_true", help="print the whole SpecDiff as JSON")
     p.set_defaults(run=_diff)
+
+    p = commands.add_parser("review", help="accept, edit or reject items; the acceptance rate")
+    actions = p.add_subparsers(required=True, metavar="ACTION")
+    s = actions.add_parser("open", help="open the review app (needs the `ui` extra)")
+    s.add_argument(
+        "path", type=Path, nargs="?", help="a Generation (`generate --json`) to add and open"
+    )
+    _add_doc_args(s, "the source, to show each quote in its section")
+    s.add_argument(
+        "--db", type=Path, default=DEFAULT_DB, help=f"review log (default: {DEFAULT_DB})"
+    )
+    s.add_argument("--fake", type=Path, metavar="DIR", help="let runs replay FakeLLM fixtures")
+    s.add_argument("--port", type=int, help="port to serve on (default: Streamlit's)")
+    s.set_defaults(run=_review_open)
+    s = actions.add_parser("stats", help="acceptance rate of the reviewed items")
+    s.add_argument(
+        "--db", type=Path, default=DEFAULT_DB, help=f"review log (default: {DEFAULT_DB})"
+    )
+    s.add_argument("--generation", metavar="ID", help="one generation (an id or its prefix)")
+    s.add_argument("--json", action="store_true", help="print the whole ReviewStats as JSON")
+    s.set_defaults(run=_review_stats)
 
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
@@ -450,6 +475,52 @@ def _diff(args: argparse.Namespace) -> int:
         print(result.model_dump_json(indent=2))
     else:
         print(diff_report(result, unchanged=args.all))
+    return 0
+
+
+def _review_open(args: argparse.Namespace) -> int:
+    if importlib.util.find_spec("streamlit") is None:
+        print("error: the review app needs Streamlit: uv sync --extra ui", file=sys.stderr)
+        return 2
+    env = {**os.environ, "SPEC2TEST_REVIEW_DB": str(args.db.resolve())}
+    try:
+        doc = _doc_arg(args)
+        if args.path is not None:
+            generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+            env["SPEC2TEST_REVIEW_OPEN"] = ReviewStore(args.db).add(generation, doc)
+        elif doc is not None:
+            print("error: --doc and --corpus go with a Generation to open", file=sys.stderr)
+            return 2
+    except (corpora.CorpusError, UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.fake is not None:
+        env["SPEC2TEST_REVIEW_FAKE"] = str(args.fake.resolve())
+    # Streamlit sends usage statistics by default; nothing here should leave the machine.
+    command = [sys.executable, "-m", "streamlit", "run", str(APP)]
+    command += ["--browser.gatherUsageStats", "false"]
+    # Serve this machine only: anyone who can reach the app can start paid model runs.
+    command += ["--server.address", "localhost"]
+    if args.port is not None:
+        command += ["--server.port", str(args.port)]
+    return subprocess.call(command, env=env)
+
+
+def _review_stats(args: argparse.Namespace) -> int:
+    if not args.db.is_file():
+        print(f"error: no review log at {args.db}", file=sys.stderr)
+        return 2
+    store = ReviewStore(args.db)
+    gid = None
+    if args.generation is not None:
+        ids = [g.id for g in store.generations() if g.id.startswith(args.generation)]
+        if len(ids) != 1:
+            found = "no generation" if not ids else f"{len(ids)} generations"
+            print(f"error: {found} with id {args.generation!r} in {args.db}", file=sys.stderr)
+            return 2
+        gid = ids[0]
+    stats = store.stats(gid)
+    print(stats.model_dump_json(indent=2) if args.json else stats_report(stats))
     return 0
 
 

@@ -18,6 +18,11 @@ dependencies = [
 [project.scripts]
 spec2test = "spec2test.cli:main"
 
+[project.optional-dependencies]
+ui = [
+    "streamlit>=1.50",
+]
+
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
@@ -50,6 +55,7 @@ dev = [
     "pytest>=9.1.1",
     "python-docx>=1.2.0",
     "ruff>=0.17.1",
+    "streamlit>=1.50",
 ]
 
 [tool.uv.sources]

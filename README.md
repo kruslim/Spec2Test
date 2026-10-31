@@ -287,6 +287,46 @@ uv run spec2test diff A.json B.json --all --json                                
 Both inputs are an Extraction, a Lint or an eval run's `results.json`. Extract both
 versions with the same `--doc-id` so unchanged requirements keep their ids.
 
+## Review
+
+`spec2test review open` starts a Streamlit app where a person reads each verification item
+next to its source and accepts, edits or rejects it. It needs the `ui` extra
+(`uv sync --extra ui`; the dev group already has it).
+
+- **Open** a Generation saved by `generate --json`, with its source so each quote shows in
+  its section, highlighted; or pick a review saved earlier.
+- **New review**: upload a PDF, DOCX, XLSX or Markdown spec (or a Document saved by
+  `ingest --json`). Ingestion runs locally and costs nothing. Upload the Generation made
+  from it, or run the pipeline (extract, lint with the model pass, generate) from the app.
+  A run on a real provider needs a confirming tick first, since it calls a paid API;
+  `--fake DIR` adds a FakeLLM provider that replays fixtures. The run's cost shows above
+  the items.
+- **Review**: each item shows its requirement (criteria, conditions, testability flags and
+  rewrites) and the source section with the quote highlighted. Accept, reject (with an
+  optional note) or edit its fields; the app moves on to the next item still to review.
+
+```bash
+uv sync --extra ui
+uv run spec2test review open generation.json --doc spec.pdf     # add a Generation and open it
+uv run spec2test review open --fake tests/fixtures/llm          # upload widget-lamp offline
+uv run spec2test review stats                                  # acceptance rate
+uv run spec2test review stats --generation 258ba75d --json
+```
+
+The app serves `localhost` only, since anyone who can open it can start a paid run.
+
+Every decision goes to a SQLite log (`review.sqlite` by default, `--db` to change it; it
+is git-ignored, since it stores the whole source document). Decisions are only added, so
+an item's history stays; the latest decision is the one that counts. An edit keeps both
+the generated and the edited fields, and must be a valid item of its kind that changes
+something. A Generation is stored under the sha256 of its JSON, so regenerated items start
+a fresh review.
+
+`review stats` reports the acceptance rate, the plan's production metric: the share of
+reviewed items accepted unedited, overall, per item kind and per verification method.
+Edited items count as reviewed but not accepted. Review decisions are not judge labels:
+nothing here writes to `gold/judge/`.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/). One command installs everything, including the
