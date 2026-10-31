@@ -17,7 +17,7 @@ from pathlib import Path
 import streamlit as st
 
 from spec2test.generate import Generation, render
-from spec2test.ingest import Document, doc_id_for, ingest
+from spec2test.ingest import Document, doc_id_for, ingest, suffixes
 from spec2test.llm import (
     PRESETS,
     AnthropicLLM,
@@ -93,8 +93,9 @@ def _open_panel(store: ReviewStore) -> None:
 def _upload_panel(store: ReviewStore, fake_dir: str | None) -> None:
     st.header("New review")
     spec = st.file_uploader(
-        "Spec", type=["pdf", "docx", "xlsx", "md", "markdown", "json"],
-        help="A PDF, DOCX, XLSX or Markdown spec, or a Document saved by `ingest --json`.",
+        "Spec", type=[s.lstrip(".") for s in suffixes()] + ["json"],
+        help="A PDF, DOCX, XLSX, Markdown or text spec (or a format a plugin adds), or a "
+        "Document saved by `ingest --json`.",
     )  # fmt: skip
     saved = st.file_uploader(
         "Generation (optional)",

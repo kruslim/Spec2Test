@@ -9,7 +9,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the build plan.
 ## Ingest
 
 `spec2test.ingest.ingest(path)` reads a PDF, DOCX, XLSX or Markdown spec through
-[Docling](https://github.com/docling-project/docling) and returns a `Document`: one
+[Docling](https://github.com/docling-project/docling), or a plain-text spec (`.txt`: one
+paragraph per clause, a form feed between pages), and returns a `Document`: one
 canonical text, its page spans, and one `Section` per numbered clause (`S5.5.1`, `5.1.1.`,
 `4.2.1`, `T.1.2`, `Annex 3`, ...) with its page, parent clause and character offsets.
 Every offset points into `Document.text`, so a later stage can check a quote verbatim.
@@ -18,6 +19,10 @@ Every offset points into `Document.text`, so a later stage can check a quote ver
 uv run spec2test ingest path/to/spec.pdf          # outline: page, clause, title
 uv run spec2test ingest path/to/spec.pdf --json   # the whole Document
 ```
+
+Each format is read by an input adapter (`spec2test plugins` lists them); `--adapter NAME`
+reads a file with a given one whatever its suffix. A plugin can add more formats; see
+[Plugins](#plugins).
 
 PDFs must be born-digital (no OCR yet). The first PDF parse downloads Docling's layout
 and table models (~500 MB) to the Hugging Face cache, and later runs are offline.
@@ -362,6 +367,128 @@ a fresh review.
 reviewed items accepted unedited, overall, per item kind and per verification method.
 Edited items count as reviewed but not accepted. Review decisions are not judge labels:
 nothing here writes to `gold/judge/`.
+
+## Export
+
+`spec2test export` writes the items for one customer, in the format, ID scheme and words
+their profile sets. Built-in formats: CSV, XLSX, a Markdown checklist and YAML. No model
+calls.
+
+```bash
+uv run spec2test export generation.json                          # CSV to the terminal
+uv run spec2test export generation.json --db review.sqlite \
+    --profile examples/profiles/widget-co.toml --out checklist.md
+uv run spec2test export --db review.sqlite --generation 258ba75d --format xlsx --out items.xlsx
+```
+
+- **Review decisions**: with `--db`, edits replace the generated fields and rejected items
+  stay out (the profile's `output.statuses` picks which statuses go out). The Generation
+  must be the one reviewed; a regenerated one has no decisions yet.
+- **Columns**: identity and trace (`id`, `kind`, `requirements`, `section`, `page`,
+  `method`, `strength`, `requirement`, `quote`), what to do and what passes for any kind
+  (`actions`, `acceptance`), each kind's own fields (`inspect`, `steps`, `equipment`,
+  `evidence`, ...), and review and provenance (`status`, `reviewer`, `note`, `model`).
+  `spec2test.export.COLUMNS` lists them with their default labels.
+- **CSV** has a UTF-8 byte-order mark, so spreadsheet programs show '§' and '±'. **XLSX**
+  writes every cell as text, and CSV puts a `'` before a cell that would start a formula
+  (`=`, `+`, `-`, `@`, unless it is a plain signed number such as `-40 °C`), so nothing an
+  item says runs in a spreadsheet. The **Markdown** checklist has one box per item,
+  grouped by section. **YAML** keys each item by column name and keeps lists as lists.
+
+A profile is a TOML file; [examples/profiles/widget-co.toml](examples/profiles/widget-co.toml)
+(an invented customer) uses every part of it:
+
+| Part | What it sets |
+| --- | --- |
+| `[ids]` | `pattern`, a Python format string over `{item}` (the generated ID), `{doc}`, `{kind}`, `{section}`, `{req}`, `{n}` and `{n_kind}`, e.g. `"{doc}-{kind}-{n:03}"`; `doc`, `kind_codes` and `start`. Numbers run over every item before rejected ones are left out, so rejecting one does not renumber the rest. |
+| `[output]` | `format` (an exporter's name), `columns`, `title`, `statuses`, and `options` passed to the exporter as is. |
+| `[vocabulary]` | The customer's words for `columns` headers, item `kinds` and review `statuses`. |
+| `required` | Columns every item must fill. An empty one is written as `[Label]` and listed, and the command exits 1; the core never invents a value. |
+| `[values]` | Columns of the customer's own with one value for every item (program, owner). |
+
+Every mistake fails when the profile loads, before anything is written: an unknown
+column, placeholder or term, a pattern that would give items the same ID, a required
+column that is not exported.
+
+## Plugins
+
+Input adapters and exporters are plugins. The built-ins register the same way an outside
+one does, and `spec2test plugins` lists what is installed. A plugin lives in its own
+package and declares an entry point in that package's `pyproject.toml`; nothing in this
+repo changes:
+
+```toml
+[project.entry-points."spec2test.adapters"]
+lamp = "my_plugins.lamp:LampAdapter"
+
+[project.entry-points."spec2test.exporters"]
+jsonl = "my_plugins.jsonl:JsonLinesExporter"
+```
+
+The entry point's name must match the plugin's `name`. A plugin that fails to load, or
+takes a name already in use, is skipped with a warning and the built-ins keep working;
+asking for it by name says why. Plugins load the first time one is needed. To register
+one in code instead (a notebook, a test), call `ADAPTERS.register(...)` or
+`EXPORTERS.register(...)`.
+
+### Writing an adapter
+
+An adapter says what text is on which page; the core does the rest (clause numbers,
+sections, page spans, offsets), so every adapter's output cites the same way.
+
+```python
+from pathlib import Path
+
+from spec2test.ingest import Block
+
+
+class LampAdapter:
+    name = "lamp"  # `--adapter lamp`; no spaces
+    suffixes = (".lamp",)  # lowercase, with the dot
+
+    def blocks(self, path: Path) -> list[Block]:
+        # Paragraphs, headings, list items and tables in reading order, with their page.
+        # A block opening with a clause number ("2.1 Brightness. ...") starts a section.
+        page, out = 1, []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() == "---":
+                page += 1
+            elif line.strip():
+                out.append(Block("text", line.strip(), page))
+        return out
+```
+
+`Block(kind, text, page)` takes kind `"heading"`, `"text"`, `"list"` or `"table"`; set
+`margin=True` on text from the page margins, so running heads and footers repeated on
+three or more pages are dropped. Raise `ValueError` for a file the adapter cannot read.
+For a suffix a built-in already reads, the built-in wins; pass `--adapter` to use yours.
+
+### Writing an exporter
+
+An exporter gets an `Export`: the profile, the title, the `columns` with their `labels`,
+and one `ExportRow` per item with its `values` (a string, or a list of strings), the
+item itself with edits applied, its requirements and its review status. Use `values` so
+the output matches the other formats; `spec2test.export.cell(value, column)` lays a value
+out as one cell.
+
+```python
+import json
+
+from spec2test.export import Export
+
+
+class JsonLinesExporter:
+    name = "jsonl"  # what a profile's output.format names
+    suffix = ".jsonl"
+
+    def export(self, export: Export) -> str:  # str is written as UTF-8; bytes as is
+        return "".join(json.dumps(row.values) + "\n" for row in export.rows)
+```
+
+Set `encoding = "utf-8-sig"` on the class to write text with a byte-order mark, and read
+your own settings from `export.options` (the profile's `[output.options]`). Exporters
+write the profile's columns, never fields of their own invention. The tests carry a
+working pair in `tests/plugin_demo.py`.
 
 ## Development
 

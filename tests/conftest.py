@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from spec2test.extract import extract
+from spec2test.generate import Generation, generate
 from spec2test.ingest import Block, Document, build_document
+from spec2test.lint import lint
 from spec2test.llm import FakeLLM
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -36,3 +39,10 @@ def fake_llm() -> FakeLLM:
 @pytest.fixture
 def widget_lamp() -> Document:
     return build_document("widget-lamp", WIDGET_LAMP)
+
+
+@pytest.fixture
+def generation(widget_lamp, fake_llm) -> Generation:
+    """The widget lamp items: extracted, linted and generated from the FakeLLM fixtures."""
+    requirements = lint(extract(widget_lamp, fake_llm).requirements, fake_llm).requirements
+    return generate(requirements, fake_llm, doc=widget_lamp)

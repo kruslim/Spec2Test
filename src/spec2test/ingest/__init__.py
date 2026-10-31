@@ -1,30 +1,42 @@
-"""Ingest: read a spec (PDF, DOCX, XLSX or Markdown) into anchored clause sections."""
+"""Ingest: read a spec (PDF, DOCX, XLSX, Markdown, plain text or a plugin's format) into
+anchored clause sections."""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
+from spec2test.ingest.adapters import (
+    ADAPTERS,
+    DoclingAdapter,
+    InputAdapter,
+    TextAdapter,
+    adapter_for,
+    suffixes,
+)
 from spec2test.ingest.models import Document, PageSpan, Section
 from spec2test.ingest.sections import Block, build_document
 
 __all__ = [
-    "SUFFIXES",
+    "ADAPTERS",
     "Block",
+    "DoclingAdapter",
     "Document",
+    "InputAdapter",
     "PageSpan",
     "Section",
+    "TextAdapter",
     "UnsupportedFormatError",
+    "adapter_for",
     "build_document",
     "doc_id_for",
     "ingest",
+    "suffixes",
 ]
-
-SUFFIXES = (".pdf", ".docx", ".xlsx", ".md", ".markdown")
 
 
 class UnsupportedFormatError(ValueError):
-    """The file is not a format ingestion reads."""
+    """The file is not a format any input adapter reads."""
 
 
 def doc_id_for(path: str | Path) -> str:
@@ -33,32 +45,36 @@ def doc_id_for(path: str | Path) -> str:
 
 
 def ingest(
-    path: str | Path, doc_id: str | None = None, *, end_marker: str | None = None
+    path: str | Path,
+    doc_id: str | None = None,
+    *,
+    end_marker: str | None = None,
+    adapter: str | None = None,
 ) -> Document:
     """Read `path` and split it into clause sections anchored to page and offset.
 
-    `end_marker` drops everything from the first block that starts with it; see
+    The input adapter is the one registered for the file's suffix, or the one named
+    `adapter`. `end_marker` drops everything from the first block that starts with it; see
     `build_document`.
     """
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix not in SUFFIXES:
+    reader = ADAPTERS.get(adapter) if adapter is not None else adapter_for(suffix)
+    if reader is None:
         raise UnsupportedFormatError(
             f"{path.name}: unsupported format {suffix or '(none)'!r}; "
-            f"expected one of {', '.join(SUFFIXES)}"
+            f"expected one of {', '.join(suffixes())}"
         )
     if not path.is_file():
         raise FileNotFoundError(path)
 
-    # Docling (and torch under it) is slow to import; keep that off the CLI's fast paths.
-    from spec2test.ingest import docling_blocks
-
-    doc = docling_blocks.convert(path)
-    blocks = docling_blocks.blocks(doc, rows_as_blocks=suffix == ".xlsx")
+    blocks = list(reader.blocks(path))
+    if not blocks:
+        raise ValueError(f"{path.name}: the {reader.name} adapter found no text")
     return build_document(
         doc_id or doc_id_for(path),
         blocks,
         source=path.name,
-        format=suffix.lstrip(".").replace("markdown", "md"),
+        format=suffix.lstrip(".").replace("markdown", "md") or reader.name,
         end_marker=end_marker,
     )
