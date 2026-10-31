@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from pydantic import BaseModel, ConfigDict, Field
 
+from spec2test.llm import TokenUsage
 from spec2test.schema import (
     ChecklistFields,
     EvidenceFields,
@@ -63,3 +66,15 @@ class Generation(_Record):
         description="Permissions and definitions: they oblige nothing; never sent.",
     )
     retried: int = Field(default=0, description="Items sent back once with their errors.")
+    usage: list[TokenUsage] = Field(
+        default_factory=list, description="Tokens per model call, for pricing the run."
+    )
+
+    @property
+    def pages(self) -> int:
+        return pages_cited(self.requirements)
+
+
+def pages_cited(requirements: Iterable[Requirement]) -> int:
+    """How many source pages the requirements cite: the pages a run's cost is spread over."""
+    return len({r.source_anchor.page for r in requirements})

@@ -7,7 +7,7 @@ judging with another model of its family runs, with a warning.
 
 from __future__ import annotations
 
-from spec2test.generate import Generation, SourceContext, source_context
+from spec2test.generate import Generation, SourceContext, pages_cited, source_context
 from spec2test.ingest import Document
 from spec2test.judge.models import JudgeAnswer, JudgeFailure, Judgement, Judging
 from spec2test.judge.prompts import SYSTEM, judge_prompt
@@ -31,6 +31,8 @@ def judge(generation: Generation, llm: LLMClient, *, doc: Document | None = None
         warnings=judge_warnings(model_name(llm), generation.model),
     )
     requirements = {r.id: r for r in generation.requirements}
+    result.pages = pages_cited(requirements[i.requirement_ids[0]] for i in generation.items)
+    start = len(llm.usage)
     for item in generation.items:
         req = requirements[item.requirement_ids[0]]
         ctx = None if doc is None else source_context(req, doc)
@@ -38,6 +40,7 @@ def judge(generation: Generation, llm: LLMClient, *, doc: Document | None = None
             result.judgements.append(judge_item(req, item, llm, ctx))
         except LLMError as exc:
             result.failed.append(JudgeFailure(item_id=item.id, error=str(exc)))
+    result.usage = llm.usage[start:]
     return result
 
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from spec2test.extract import Extraction
 from spec2test.lint import Lint
+from spec2test.llm import TokenUsage
 from spec2test.schema import Requirement
 
 
@@ -147,6 +148,10 @@ class EvalRun(_Record):
         description="gold method -> extracted method ('none' if unclassified) -> pairs."
     )
     flags: list[FlagCounts]
+    usage: list[TokenUsage] = Field(
+        default_factory=list,
+        description="Tokens per model call, extraction and linting both, for pricing the run.",
+    )
 
     def metric(self, name: str) -> Metric:
         return next(m for m in self.metrics if m.name == name)

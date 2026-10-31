@@ -111,7 +111,9 @@ class OpenAICompatLLM(LLMClient):
         if response.status_code != 200:
             raise LLMError(f"{self.model} returned HTTP {response.status_code}: {response.text}")
 
-        choice = response.json()["choices"][0]
+        body = response.json()
+        self._record(body)
+        choice = body["choices"][0]
         if choice.get("finish_reason") == "content_filter":
             raise LLMRefusalError(f"{self.model} declined the request")
         if choice.get("finish_reason") == "length":
@@ -127,3 +129,15 @@ class OpenAICompatLLM(LLMClient):
             raise LLMOutputError(
                 f"{self.model} output did not match {schema.__name__}: {exc}"
             ) from exc
+
+    def _record(self, body: dict[str, Any]) -> None:
+        """Record the call's tokens. Output is `total - prompt` when the endpoint reports a
+        total, so thinking tokens a provider leaves out of `completion_tokens` still count."""
+        usage = body.get("usage")
+        if not usage:
+            return
+        prompt = usage.get("prompt_tokens") or 0
+        output = usage.get("completion_tokens") or 0
+        if usage.get("total_tokens"):
+            output = max(output, usage["total_tokens"] - prompt)
+        self.record_usage(body.get("model") or self.model, prompt, output)

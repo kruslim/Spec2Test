@@ -68,6 +68,7 @@ class AnthropicLLM(LLMClient):
         # `create` rather than `parse`: `parse` validates eagerly, which would report a
         # truncated response as a schema mismatch before stop_reason can be checked.
         response = self.client.beta.messages.create(**request)
+        self._record(response)
 
         if response.stop_reason == "refusal":
             details = response.stop_details
@@ -94,3 +95,18 @@ class AnthropicLLM(LLMClient):
             raise LLMOutputError(
                 f"{self.model} output did not match {schema.__name__}: {exc}"
             ) from exc
+
+    def _record(self, response: Any) -> None:
+        """Record the call's tokens. With a server-side fallback, each model that ran is
+        billed at its own rate, so each sampling iteration is recorded under its model."""
+        usage = response.usage
+        served = getattr(response, "model", None) or self.model
+        iterations = [
+            i
+            for i in getattr(usage, "iterations", None) or []
+            if i.type in ("message", "fallback_message")
+        ]
+        if not iterations:
+            self.record_usage(served, usage.input_tokens, usage.output_tokens)
+        for i in iterations:
+            self.record_usage(i.model or served, i.input_tokens, i.output_tokens)
