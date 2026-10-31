@@ -1,0 +1,20 @@
+[
+  {
+    "name": "extract-reflector-permission-and-procedure",
+    "schema": "ExtractedRequirements",
+    "prompt_contains": ["Section: 4.1 Reflector"],
+    "response": {
+      "requirements": [
+        {
+          "quote": "Except as provided in 4.2, the reflector shall return at least 80 % of incident light when tested in accordance with 5.1.",
+          "text": "Except as provided in 4.2, the reflector shall return at least 80 % of incident light when tested in accordance with 5.1.",
+          "type": "performance",
+          "strength": "shall",
+          "criteria": [{"parameter": "returned incident light", "comparator": "ge", "value": "80", "unit": "%"}],
+          "conditions": ["except as provided in 4.2", "when tested in accordance with 5.1"],
+          "verification_method": "test"
+        }
+      ]
+    }
+  }
+]
