@@ -24,15 +24,17 @@ stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase
   corpora test needs `SPEC2TEST_CORPORA=1` and the documents in `corpora/`)
 - One test file: `uv run pytest tests/test_lint.py -q`
 - Offline pipeline run: any stage with `--fake tests/fixtures/llm`
-- Live runs (`SPEC2TEST_LIVE=1`, `spec2test eval|generate|judge` without `--fake`) call paid
-  APIs: ask before running one.
+- Live runs (`SPEC2TEST_LIVE=1`, `spec2test eval|generate` without `--fake`, and `judge` or
+  `calibrate score` with `--provider gemini`) call paid APIs: ask before running one.
+  `--provider session` (the judge's default) calls none.
 
 ## Layout
 
 - `src/spec2test/<stage>/`: `models.py` (Pydantic), `prompts.py`, `pipeline.py`; one
   package per stage (`ingest`, `extract`, `lint`, `generate`, `judge`, `evals`).
 - `src/spec2test/llm/`: `LLMClient` (`base.py`), Anthropic, OpenAI-compatible (Kimi,
-  Gemini) and `FakeLLM` (`fake.py`, documents the fixture format).
+  Gemini), `SessionLLM` (`session.py`, answers written in a Claude Code session) and
+  `FakeLLM` (`fake.py`, documents the fixture format).
 - `tests/conftest.py`: the invented `widget_lamp` document and the `fake_llm` fixture.
 - `gold/`: labeled gold sets (format in `gold/README.md`); `corpora/manifest.toml`
   pins each source document by sha256.
@@ -43,8 +45,10 @@ stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase
 - Pipeline stages depend on `spec2test.llm.LLMClient`, never on a provider SDK directly.
 - Every test runs offline against `FakeLLM` fixtures in `tests/fixtures/llm/`. A new
   model call needs a fixture there, matched by `schema` and `prompt_contains`.
-- Model roles: a model never grades its own work. The labeler, the scored model and the
-  judge are different models; keep the warnings and refusals that enforce this.
+- Model roles: a model never grades its own work. The scored model (Kimi) is never the
+  labeler or the judge; keep the warnings and refusals that enforce this. Opus labels and
+  judges in sessions (`/session-judge`); Gemini is paid, so it only judges the
+  calibration sample as a cross-check.
 - Values the source does not give go in [brackets]; never invent limits.
 - Ruff, line length 100. A hook formats each edited Python file.
 - Commit messages: `Phase N: <summary>` (or a plain summary outside a phase), then a

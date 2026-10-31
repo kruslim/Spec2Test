@@ -203,12 +203,38 @@ acceptance rate and each criterion's pass rate, per item kind.
 
 The judge must not be the generator: judging with the generator's own model is refused,
 and a judge from the generator's model family gets a warning, as the eval does for
-gold-set labelers. Kimi generates; Gemini (`--provider gemini`, `GEMINI_API_KEY`) is the
-default judge.
+gold-set labelers. Kimi generates. The main judge is Claude Opus in a Claude Code session
+(`--provider session`, the default), which costs no API tokens; Gemini (`--provider
+gemini`, `GEMINI_API_KEY`) is paid, so it only judges a small sample as an independent
+check.
 
 ```bash
-uv run spec2test judge generation.json --corpus fmvss-111         # live, Gemini
+uv run spec2test judge generation.json --corpus fmvss-111 --answers opus.jsonl   # session
+uv run spec2test judge gold/judge/fmvss-111.jsonl --provider gemini              # live, Gemini
 ```
+
+`--provider session` runs twice. The first pass writes every judge call it has no answer
+for to `opus.requests.jsonl` (the rubric, the requirement with its source context, and
+the item, under a key) and exits 1. In a Claude Code session, Opus answers each request
+and appends `{"key": ..., "response": {...}}` lines to `opus.jsonl`
+(`.claude/skills/session-judge`). The second pass, the same command, reads the answers and
+prints the scores; a request still unanswered, or an answer that does not fit the schema,
+is a failed item, and only the requests still missing are written again. The key hashes
+the whole prompt, so an answer never answers a changed prompt. `spec2test.llm.SessionLLM`
+does this for any stage, behind the same `LLMClient` interface.
+
+`spec2test judge` also takes a calibration sample (`.jsonl`): it judges every line with
+the source context stored on it, labeled or not. Those are the prompts the full run sent,
+so session answers carry over. To check the main judge against a second one:
+
+```bash
+uv run spec2test calibrate compare opus-judging.json gemini-sample.json   # no model calls
+```
+
+`compare` reports, over the items both judged, the agreement and Cohen's kappa per
+criterion and for `acceptable`, and each disagreement with both judges' reasons. It warns
+when both judges are from one model family. Agreement between two models only says where
+to look; agreement with a person (below) is what makes the judge's numbers count.
 
 ### Calibration
 
@@ -217,8 +243,8 @@ The judge's numbers mean something only once it agrees with a person. To measure
 ```bash
 uv run spec2test calibrate sample generation.json --corpus fmvss-111 --out gold/judge/fmvss-111.jsonl
 # fill in "human" on every line: labeler, a true/false per rubric criterion, acceptable
-uv run spec2test calibrate score gold/judge/fmvss-111.jsonl       # live, Gemini
-uv run spec2test calibrate score gold/judge/fmvss-111.jsonl --judgements calibration.json   # no model calls
+uv run spec2test calibrate score gold/judge/fmvss-111.jsonl --answers opus.jsonl   # session
+uv run spec2test calibrate score gold/judge/fmvss-111.jsonl --judgements opus-judging.json   # no model calls
 ```
 
 `sample` draws items in turn from each item kind (`--size`, `--seed`) and stores each with

@@ -33,7 +33,7 @@ PRESETS = {
         model="kimi-for-coding",
         api_key_env="KIMI_CODE_API_KEY",
     ),
-    # The default test-case judge: a different family from the Kimi generator.
+    # The paid cross-check judge, on the calibration sample only; Opus judges in sessions.
     "gemini": Preset(
         base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         model="gemini-3.1-pro-preview",
