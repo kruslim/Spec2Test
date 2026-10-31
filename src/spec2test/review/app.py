@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
@@ -90,7 +91,13 @@ def _open_panel(store: ReviewStore) -> None:
         st.rerun()
 
 
-def _upload_panel(store: ReviewStore, fake_dir: str | None) -> None:
+def _upload_panel(
+    store: ReviewStore,
+    fake_dir: str | None,
+    run: Callable[[ReviewStore, Document], None] | None = None,
+) -> None:
+    """Upload a spec, then open a saved Generation for it or run the pipeline; `run`
+    replaces the run panel (the hosted app's runs one fixed model under the cost cap)."""
     st.header("New review")
     spec = st.file_uploader(
         "Spec", type=[s.lstrip(".") for s in suffixes()] + ["json"],
@@ -111,7 +118,10 @@ def _upload_panel(store: ReviewStore, fake_dir: str | None) -> None:
     if doc is None:
         return
     st.caption(f"{doc.doc_id}: {len(doc.sections)} sections, {len(doc.pages)} pages")
-    _run_panel(store, doc, fake_dir)
+    if run is not None:
+        run(store, doc)
+    else:
+        _run_panel(store, doc, fake_dir)
 
 
 @st.cache_data(show_spinner="Reading the spec (the first PDF downloads Docling's models)")
@@ -353,4 +363,6 @@ def _not_generated(generation: Generation) -> None:
             st.markdown(f"- {row}")
 
 
-main()
+# The hosted app (spec2test.deploy.app) imports the panels above without running this page.
+if __name__ == "__main__":
+    main()

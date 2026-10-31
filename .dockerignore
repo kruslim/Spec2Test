@@ -1,0 +1,7 @@
+# The image holds code only: no documents, gold sets, eval runs, review logs or secrets.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+**/__pycache__

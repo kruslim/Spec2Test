@@ -1,0 +1,26 @@
+# An example deployment config for `spec2test deploy`, for an invented partner. The real
+# one lists partners' emails: keep it on the host's volume (/data/deploy.toml), not in git.
+
+# Every workspace's data and the usage ledger; relative to this file, or absolute.
+data_dir = "/data"
+
+# The one model every hosted run calls.
+[llm]
+provider = "kimi-code"
+
+# Limits for all workspaces together, per UTC calendar month. kimi-for-coding has no
+# per-token price, so it can only be held to a token cap.
+[cap]
+monthly_tokens = 20_000_000
+
+# What the data-handling page says; anything left out shows as [a bracket].
+[data_page]
+host = "Fly.io, Chicago (ord)"
+contact = "pilot@widget-co.example"
+# provider_terms = "https://..."
+# backup_days = 5
+
+# One table per workspace; members sign in with these emails.
+[workspaces.widget-co]
+name = "Widget Co"
+members = ["ana@widget-co.example"]

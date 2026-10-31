@@ -24,6 +24,10 @@ spec2test = "spec2test.cli:main"
 ui = [
     "streamlit>=1.50",
 ]
+# The hosted app: the review UI plus Streamlit's OpenID Connect sign-in (Authlib).
+deploy = [
+    "streamlit[auth]>=1.50",
+]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
