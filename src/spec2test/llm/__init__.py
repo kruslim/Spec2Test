@@ -21,6 +21,26 @@ from spec2test.llm.session import (
 )
 from spec2test.llm.usage import PRICES, Cost, Price, TokenUsage, cost, cost_line, price_of
 
+
+def provider_name(llm: LLMClient) -> str:
+    """How `llm` is called, for the record: "session" (answered in a Claude Code session,
+    no API spend), "fake", "anthropic", an OpenAI-compatible preset's name ("kimi-code",
+    "gemini") or "openai-compatible"."""
+    if isinstance(llm, SessionLLM):
+        return "session"
+    if isinstance(llm, FakeLLM):
+        return "fake"
+    if isinstance(llm, AnthropicLLM):
+        return "anthropic"
+    if isinstance(llm, OpenAICompatLLM):
+        url = llm.base_url.rstrip("/")
+        return next(
+            (name for name, p in PRESETS.items() if p.base_url.rstrip("/") == url),
+            "openai-compatible",
+        )
+    return type(llm).__name__
+
+
 __all__ = [
     "PRESETS",
     "PRICES",
@@ -48,6 +68,7 @@ __all__ = [
     "model_family",
     "model_name",
     "price_of",
+    "provider_name",
     "request_key",
     "write_requests",
 ]

@@ -15,6 +15,7 @@ from spec2test.extract import Extraction, extract, is_normative
 from spec2test.ingest import Document
 from spec2test.lint import Lint
 from spec2test.llm import LLMClient, model_name
+from spec2test.version import code_version
 
 LintMode = Literal["full", "rules", "off"]
 """How an eval lints the extraction: the rules and the LLM pass, the rules only, or not
@@ -53,6 +54,7 @@ def evaluate(
         lint=linted,
     )
     run.usage = llm.usage[start:]
+    run.code_version = code_version()
     return run
 
 
@@ -82,6 +84,7 @@ def rescore(
     run = score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds, lint=linted)
     if isinstance(previous, EvalRun):
         run.usage = previous.usage
+        run.code_version = previous.code_version
         if changed := text_changed(previous, run):
             run.warnings.append(changed)
     return run

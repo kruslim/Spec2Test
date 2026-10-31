@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from spec2test import corpora, evals
+from spec2test import corpora, dashboard, evals
 from spec2test.deploy import (
     AuthConfigError,
     DeployConfigError,
@@ -62,6 +62,8 @@ from spec2test.review import APP, DEFAULT_DB, ReviewStore, generation_id, stats_
 from spec2test.schema import Requirement
 from spec2test.textio import read_text
 from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
+
+DASHBOARD_HTML = Path("eval-reports", "dashboard.html")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -239,6 +241,33 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--generation", metavar="ID", help="one generation (an id or its prefix)")
     _add_json_args(s, "ReviewStats")
     s.set_defaults(run=_review_stats)
+
+    p = commands.add_parser(
+        "dashboard", help="every saved eval, judging and review in one view; no model calls"
+    )
+    p.add_argument(
+        "sources",
+        type=Path,
+        nargs="*",
+        default=[Path("eval-reports")],
+        help="folders searched for saved runs (*.json), or single files (default: eval-reports)",
+    )
+    p.add_argument(
+        "--db",
+        type=Path,
+        action="append",
+        default=[],
+        help="a review log to count the acceptance rate of (repeatable)",
+    )
+    p.add_argument(
+        "--html",
+        type=Path,
+        metavar="FILE",
+        default=DASHBOARD_HTML,
+        help=f"write the HTML dashboard here (default: {DASHBOARD_HTML})",
+    )
+    _add_json_args(p, "Dashboard")
+    p.set_defaults(run=_dashboard)
 
     p = commands.add_parser("export", help="write items in a customer profile's format")
     p.add_argument(
@@ -639,6 +668,18 @@ def _write_session_requests(args: argparse.Namespace, llm: LLMClient) -> None:
         f"the answers to {args.answers}, then run the same command again",
         file=sys.stderr,
     )
+
+
+def _dashboard(args: argparse.Namespace) -> int:
+    board = dashboard.collect(args.sources, args.db)
+    args.html.parent.mkdir(parents=True, exist_ok=True)
+    args.html.write_text(dashboard.html_report(board), encoding="utf-8")
+    if _wants_json(args):
+        _write_json(args, board)
+    else:
+        print(dashboard.text_report(board))
+    print(f"dashboard: {args.html}", file=sys.stderr)
+    return 0 if board.extraction or board.judging or board.agreement or board.reviews else 1
 
 
 def _trace(args: argparse.Namespace) -> int:

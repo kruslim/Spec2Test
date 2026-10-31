@@ -74,6 +74,16 @@ class JudgeFailure(_Record):
 class Judging(_Record):
     judge_model: str
     generator_model: str
+    provider: str | None = Field(
+        default=None,
+        description="How the judge was called: 'session' (answered in a Claude Code "
+        "session, no API spend) or an API provider. None in judgings saved before it was "
+        "recorded.",
+    )
+    created: str | None = Field(default=None, description="ISO 8601 time of the judging.")
+    code_version: str | None = Field(
+        default=None, description="Spec2Test version and git commit that judged."
+    )
     warnings: list[str] = Field(default_factory=list)
     judgements: list[Judgement] = Field(default_factory=list)
     failed: list[JudgeFailure] = Field(default_factory=list)

@@ -133,6 +133,11 @@ class EvalRun(_Record):
     docling: str | None = Field(
         default=None, description="The Docling version installed when the run was scored."
     )
+    code_version: str | None = Field(
+        default=None,
+        description="Spec2Test version and git commit that extracted the run "
+        "(`spec2test.version.code_version`); None in runs saved before it was recorded.",
+    )
     scope: list[str] | None
     gold_labeler: str | None = None
     gold_reviewed: bool = False
