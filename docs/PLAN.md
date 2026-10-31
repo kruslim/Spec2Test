@@ -177,6 +177,8 @@ Done when: a user can upload a spec, review items next to the highlighted source
 Create a Streamlit app: upload a document, run the pipeline, review requirements and items with the source quote highlighted, accept/edit/reject each item. Log every decision and edit to SQLite; acceptance rate feeds the eval dashboard.
 ```
 
+Status (Oct 31, 2026): built. `spec2test review open` starts a Streamlit app (the `ui` extra): upload a spec, which is ingested locally, then upload its Generation or run extract, lint and generate from the app (a paid provider needs an explicit confirming tick; `--fake` replays fixtures). Each item shows next to its requirement and the source section, with the quote highlighted; the reviewer accepts, edits (per-field form, validated against the item kind) or rejects it, with an optional note. Every decision is appended to a SQLite log with the generated and edited fields, the reviewer and the time. `spec2test review stats` reports the acceptance rate (reviewed items accepted unedited) overall, per item kind and per method; no eval dashboard exists yet, so this is where the rate lives. Tested offline with Streamlit's AppTest on the widget lamp (upload, run on FakeLLM, accept, reject, edit). Nothing measured: no one has reviewed a real generation yet.
+
 ### Phase 8 — Profiles, adapters and exports
 
 Done when: a new input format or output template can be added as a plugin without touching the core.
