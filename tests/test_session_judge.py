@@ -91,10 +91,14 @@ def test_an_answer_answers_only_its_own_request():
         llm.generate("Grade this.", Verdict, system="You grade.")
 
 
-def test_an_answer_that_does_not_fit_the_schema_fails():
+def test_an_answer_that_does_not_fit_the_schema_fails_and_is_asked_again():
     key = request_key("Grade this.", JudgeAnswer)
+    llm = SessionLLM({key: {"acceptable": True}})
     with pytest.raises(LLMOutputError, match="does not match JudgeAnswer"):
-        SessionLLM({key: {"acceptable": True}}).generate("Grade this.", JudgeAnswer)
+        llm.generate("Grade this.", JudgeAnswer)
+    [request] = llm.pending
+    assert request.key == key and "does not match JudgeAnswer" in request.error
+    assert llm.invalid == [request]
 
 
 def test_answers_load_from_jsonl(tmp_path):
@@ -171,7 +175,7 @@ def test_cli_judge_in_two_session_passes_then_compare(generation, tmp_path, caps
 
     assert cli.main(judge_cmd) == 1
     requests_path = tmp_path / "opus.requests.jsonl"
-    assert f"5 request(s) without a session answer written to {requests_path}" in (
+    assert f"5 request(s) without a valid session answer written to {requests_path}" in (
         capsys.readouterr().err
     )
     requests = load_requests(requests_path)
@@ -181,12 +185,10 @@ def test_cli_judge_in_two_session_passes_then_compare(generation, tmp_path, caps
     capsys.readouterr()
     answer_all(load_requests(requests_path), answers)
 
-    assert cli.main([*judge_cmd, "--json"]) == 0
-    captured = capsys.readouterr()
-    assert "every request has a session answer" in captured.err
     opus = tmp_path / "opus-judging.json"
-    opus.write_text(captured.out, encoding="utf-8")
-    assert json.loads(captured.out)["judge_model"] == "claude-opus-5-5"
+    assert cli.main([*judge_cmd, "--out", str(opus)]) == 0
+    assert "every request has a session answer" in capsys.readouterr().err
+    assert json.loads(opus.read_text(encoding="utf-8"))["judge_model"] == "claude-opus-5-5"
 
     fake = str(FIXTURES / "llm")
     second = ["judge", str(gen_path), "--fake", fake, "--model", "gemini-3.1-pro-preview"]
@@ -196,6 +198,29 @@ def test_cli_judge_in_two_session_passes_then_compare(generation, tmp_path, caps
     assert cli.main(["calibrate", "compare", str(opus), str(gemini)]) == 0
     out = capsys.readouterr().out
     assert "5 items graded by both" in out and "100.0%" in out
+
+
+def test_cli_asks_again_for_an_answer_that_does_not_fit(generation, tmp_path, capsys):
+    gen_path = tmp_path / "generation.json"
+    gen_path.write_text(generation.model_dump_json(), encoding="utf-8")
+    answers = tmp_path / "opus.jsonl"
+    judge_cmd = ["judge", str(gen_path), "--answers", str(answers)]
+    cli.main(judge_cmd)
+    requests_path = tmp_path / "opus.requests.jsonl"
+    requests = load_requests(requests_path)
+    answer_all(requests[1:], answers)
+    with answers.open("a", encoding="utf-8") as f:
+        f.write(answer_line(requests[0].key, {"acceptable": True}) + "\n")
+    capsys.readouterr()
+
+    assert cli.main(judge_cmd) == 1
+    err = capsys.readouterr().err
+    assert "every request has a session answer" not in err
+    assert "1 request(s) without a valid session answer (1 whose answer did not match" in err
+    [again] = load_requests(requests_path)
+    assert again.key == requests[0].key and "does not match JudgeAnswer" in again.error
+    answer_all([again], answers)  # a corrected line for the same key replaces the bad one
+    assert cli.main(judge_cmd) == 0
 
 
 def test_cli_session_needs_an_answers_file(generation, tmp_path, capsys):

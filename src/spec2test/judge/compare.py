@@ -52,6 +52,18 @@ def compare(first: Judging, second: Judging) -> JudgeComparison:
     b = {j.item_id: j for j in second.judgements}
     shared = [i for i in a if i in b]
     warnings = []
+    differ = [i for i in shared if a[i].graded and b[i].graded and a[i].graded != b[i].graded]
+    if differ:
+        shared = [i for i in shared if i not in differ]
+        warnings.append(
+            f"{len(differ)} item id(s) were graded on different texts by the two judges (a "
+            "regenerated item?) and are left out; judge the same file with both"
+        )
+    if any(a[i].graded is None or b[i].graded is None for i in shared):
+        warnings.append(
+            "some judgements carry no hash of the text they graded, so it cannot be checked "
+            "that both judges graded the same items"
+        )
     if model_family(first.judge_model) == model_family(second.judge_model):
         warnings.append(
             f"both judges are from the {model_family(first.judge_model)!r} family: their "

@@ -14,7 +14,8 @@ passes over the same command:
 The key is a hash of the schema name, the system prompt and the prompt, so an answer
 only ever answers the exact request it was written for; a changed prompt asks again.
 Answers can be written in several sittings: the second pass asks only for what is
-still missing.
+still missing. An answer that does not match the schema is asked for again, with the
+validation error, and a new line for the same key replaces it.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from spec2test.llm.base import LLMClient, LLMError, LLMOutputError
+from spec2test.textio import read_text
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -43,6 +45,8 @@ class SessionRequest(BaseModel):
     json_schema: dict[str, Any]
     system: str | None
     prompt: str
+    error: str | None = None
+    """Why the answer already written for this request was refused, if one was."""
 
 
 class SessionAnswer(BaseModel):
@@ -74,7 +78,7 @@ class SessionLLM(LLMClient):
         path = Path(path)
         answers: dict[str, dict[str, Any]] = {}
         if path.exists():
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for number, line in enumerate(read_text(path).splitlines(), 1):
                 if not line.strip():
                     continue
                 try:
@@ -91,23 +95,40 @@ class SessionLLM(LLMClient):
         key = request_key(prompt, schema, system)
         response = self.answers.get(key)
         if response is None:
-            if all(r.key != key for r in self.pending):
-                self.pending.append(
-                    SessionRequest(
-                        key=key,
-                        schema_name=schema.__name__,
-                        json_schema=schema.model_json_schema(),
-                        system=system,
-                        prompt=prompt,
-                    )
-                )
+            self._ask(key, prompt, schema, system)
             raise AnswerMissingError(f"no session answer for request {key} yet")
         try:
             return schema.model_validate(response)
         except ValidationError as exc:
-            raise LLMOutputError(
-                f"the answer to request {key} does not match {schema.__name__}: {exc}"
-            ) from exc
+            error = f"the answer to request {key} does not match {schema.__name__}: {exc}"
+            self._ask(key, prompt, schema, system, error=error)
+            raise LLMOutputError(error) from exc
+
+    @property
+    def invalid(self) -> list[SessionRequest]:
+        """The pending requests whose written answer was refused."""
+        return [r for r in self.pending if r.error is not None]
+
+    def _ask(
+        self,
+        key: str,
+        prompt: str,
+        schema: type[BaseModel],
+        system: str | None,
+        *,
+        error: str | None = None,
+    ) -> None:
+        if all(r.key != key for r in self.pending):
+            self.pending.append(
+                SessionRequest(
+                    key=key,
+                    schema_name=schema.__name__,
+                    json_schema=schema.model_json_schema(),
+                    system=system,
+                    prompt=prompt,
+                    error=error,
+                )
+            )
 
 
 def write_requests(requests: list[SessionRequest], path: str | Path) -> None:
@@ -116,7 +137,7 @@ def write_requests(requests: list[SessionRequest], path: str | Path) -> None:
 
 
 def load_requests(path: str | Path) -> list[SessionRequest]:
-    text = Path(path).read_text(encoding="utf-8")
+    text = read_text(path)
     return [SessionRequest.model_validate_json(line) for line in text.splitlines() if line.strip()]
 
 

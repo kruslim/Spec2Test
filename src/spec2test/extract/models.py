@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from spec2test.llm.usage import TokenUsage
 from spec2test.schema import Criterion, Requirement, RequirementType, Strength, VerificationMethod
 
 
@@ -70,3 +71,6 @@ class Extraction(_Record):
         default_factory=list, description="Sections with no normative wording; never sent."
     )
     retried: int = Field(default=0, description="Drafts sent back once with their citation error.")
+    usage: list[TokenUsage] = Field(
+        default_factory=list, description="Tokens per model call, for pricing the run."
+    )

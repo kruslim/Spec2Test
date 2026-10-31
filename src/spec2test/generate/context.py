@@ -33,6 +33,12 @@ MAX_CONTEXT_CHARS = 40_000
 """Most referenced-clause text sent with one requirement, all clauses together."""
 
 _RANGE = re.compile(r"(\S+)\s+(?:through|thru|to)\s+(\S+)", re.IGNORECASE)
+_CLAUSE = re.compile(r"[A-Z]+\.?\d+(?:\.\d+)*|\d+(?:\.\d+)+", re.IGNORECASE)
+"""A token that reads as a clause number on its own: 'S5', 'T.1.2', '5.1.1', '2.1'. A bare
+'2' does not ("shall have 2 bulbs"); it counts only after a word that names a clause."""
+_CUES = {"paragraph", "paragraphs", "para", "paras", "clause", "clauses", "section"}
+_CUES |= {"sections", "§", "§§", "item", "items", "point", "points"}
+_ANNEX = {"annex", "appendix"}
 _DEFINITIONS_TITLE = re.compile(r"\bdefinitions?\b", re.IGNORECASE)
 _DEFINES = re.compile(r"^(?P<term>[^\n]{1,80}?)\s+(?:means|is defined as|refers to)\b")
 
@@ -105,8 +111,10 @@ def references(req: Requirement, doc: Document) -> list[Clause]:
     """
     anchors = {s.anchor: s for s in doc.sections if s.anchor}
     own = req.source_anchor.section
+    own_section = _own_section(req, doc)
+    annex = None if own_section is None else own_section.annex
     named: list[Section] = []
-    for anchor in _named_anchors(_words(req), anchors, doc):
+    for anchor in _named_anchors(_words(req), anchors, doc, annex):
         section = anchors[anchor]
         if anchor != own and section not in named:
             named.append(section)
@@ -152,22 +160,77 @@ def _glossary(doc: Document) -> list[tuple[str, str]]:
     return [(term, "\n\n".join(paras)) for term, paras in entries]
 
 
-def _named_anchors(words: str, anchors: dict[str, Section], doc: Document) -> list[str]:
+def _named_anchors(
+    words: str, anchors: dict[str, Section], doc: Document, annex: str | None = None
+) -> list[str]:
+    """The anchors `words` names, in order. A clause number resolves inside the annex it
+    is said to be in ("paragraph 2.1 of Annex 3", "Annex 3, paragraph 2.1"), else inside
+    the requirement's own `annex`, else in the body: annexes restart their numbering."""
     tokens = [_strip(t) for t in words.split()]
     out: list[str] = []
-    ranges = {
-        (_strip(m[1]), _strip(m[2]))
-        for m in _RANGE.finditer(words)
-        if _strip(m[1]) in anchors and _strip(m[2]) in anchors
-    }
-    for token in tokens:
-        if token not in anchors:
+    for i, token in enumerate(tokens):
+        if token.casefold() in _ANNEX and i + 1 < len(tokens):
+            if (name := _annex(token, tokens[i + 1], anchors)) is not None and not _locates(
+                tokens, i
+            ):
+                out.append(name)
             continue
-        out.append(token)
-        for first, last in ranges:
-            if token == first:
-                out += [s.anchor for s in _span(anchors[first], anchors[last], doc) if s.anchor]
+        cued = i > 0 and tokens[i - 1].casefold() in _CUES
+        if not (_CLAUSE.fullmatch(token) or (cued and token.isdigit())):
+            continue
+        if i > 0 and tokens[i - 1].casefold() in _ANNEX:
+            continue  # the number of "Annex 3", named above
+        if (anchor := _resolve(token, _annex_near(tokens, i, anchors) or annex, anchors)) is None:
+            continue
+        out.append(anchor)
+        out += _range_from(words, token, anchor, anchors, doc)
     return out
+
+
+def _locates(tokens: list[str], i: int) -> bool:
+    """Whether "Annex 3" at `tokens[i]` only says where a clause is, as in "2.1 of Annex 3"
+    or "Annex 3, paragraph 2.1": then the clause is the reference, not the whole annex."""
+    before = tokens[max(i - 2, 0) : i]
+    if len(before) == 2 and before[1].casefold() in ("of", "in") and _CLAUSE.fullmatch(before[0]):
+        return True
+    return any(_CLAUSE.fullmatch(t) for t in tokens[i + 2 : i + 4])
+
+
+def _annex(word: str, number: str, anchors: dict[str, Section]) -> str | None:
+    """The anchor of "Annex 3" or "appendix 3" as the document spells it, if it has one."""
+    wanted = f"{word} {number}".casefold()
+    return next((a for a in anchors if a.casefold() == wanted), None)
+
+
+def _annex_near(tokens: list[str], i: int, anchors: dict[str, Section]) -> str | None:
+    """The annex a clause number at `tokens[i]` is said to be in: "2.1 of Annex 3" just
+    after it, or "Annex 3, paragraph 2.1" just before it."""
+    after = tokens[i + 1 : i + 4]
+    if len(after) >= 3 and after[0].casefold() in ("of", "in") and after[1].casefold() in _ANNEX:
+        return _annex(after[1], after[2], anchors)
+    for j in range(max(i - 3, 0), i - 1):
+        if tokens[j].casefold() in _ANNEX:
+            return _annex(tokens[j], tokens[j + 1], anchors)
+    return None
+
+
+def _resolve(number: str, annex: str | None, anchors: dict[str, Section]) -> str | None:
+    if annex is not None and f"{annex} {number}" in anchors:
+        return f"{annex} {number}"
+    return number if number in anchors else None
+
+
+def _range_from(
+    words: str, token: str, first: str, anchors: dict[str, Section], doc: Document
+) -> list[str]:
+    """The clauses after `first` in "S5.5.1 through S5.5.7", when `token` starts a range."""
+    for m in _RANGE.finditer(words):
+        if _strip(m[1]) != token:
+            continue
+        last = _resolve(_strip(m[2]), anchors[first].annex, anchors)
+        if last is not None:
+            return [s.anchor for s in _span(anchors[first], anchors[last], doc) if s.anchor]
+    return []
 
 
 def _span(first: Section, last: Section, doc: Document) -> list[Section]:

@@ -50,9 +50,10 @@ calibration sample (`gold/judge/*.jsonl`) goes to `spec2test calibrate score`.
 
    Long runs can be split across sittings: answers already written are kept, and the
    next pass asks only for the rest. A later line for the same key replaces an earlier one.
-4. Run the same command again, with `--json > RUN/opus-judging.json`. It exits 0 when
-   every item has a valid answer; an answer that does not fit the schema shows up as a
-   failed item with the validation error, so fix that line and rerun.
+4. Run the same command again, with `--out RUN/opus-judging.json`. It exits 0 when
+   every item has a valid answer. An answer that does not fit the schema shows up as a
+   failed item, and its request is written back to the requests file with the validation
+   error in `error`: append a corrected line for that key and rerun.
 5. Report the quality table (`spec2test judge` without `--json` prints it), naming the
    generator, the judge model and "session run".
 
@@ -64,8 +65,8 @@ judgements on the same items is reported. With the user's OK:
 
 ```bash
 uv run spec2test judge gold/judge/<corpus>.jsonl --provider session --model MODEL \
-  --answers RUN/opus-sample-answers.jsonl    # free; once answered, rerun: --json > RUN/opus-sample.json
-uv run spec2test judge gold/judge/<corpus>.jsonl --provider gemini --json > RUN/gemini-sample.json
+  --answers RUN/opus-sample-answers.jsonl    # free; once answered, rerun: --out RUN/opus-sample.json
+uv run spec2test judge gold/judge/<corpus>.jsonl --provider gemini --out RUN/gemini-sample.json
 uv run spec2test calibrate compare RUN/opus-sample.json RUN/gemini-sample.json
 ```
 

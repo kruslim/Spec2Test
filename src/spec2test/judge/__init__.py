@@ -1,6 +1,7 @@
 """Judge: grade verification items against a written rubric, calibrated against people."""
 
 from spec2test.judge.calibrate import (
+    LabelsExistError,
     calibrate,
     judge_sample,
     load_sample,
@@ -19,6 +20,7 @@ from spec2test.judge.models import (
     Judgement,
     Judging,
     Verdict,
+    graded_hash,
 )
 from spec2test.judge.pipeline import SameModelError, judge, judge_item, judge_warnings
 from spec2test.judge.report import calibration_report, quality_report
@@ -37,6 +39,7 @@ __all__ = [
     "JudgeFailure",
     "Judgement",
     "Judging",
+    "LabelsExistError",
     "SameModelError",
     "SplitVerdict",
     "Verdict",
@@ -44,6 +47,7 @@ __all__ = [
     "calibration_report",
     "compare",
     "comparison_report",
+    "graded_hash",
     "judge",
     "judge_item",
     "judge_sample",

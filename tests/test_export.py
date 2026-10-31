@@ -82,11 +82,25 @@ def test_id_scheme(generation):
 def test_rejecting_an_item_does_not_renumber_the_rest(tmp_path, generation):
     store = ReviewStore(tmp_path / "review.sqlite")
     gid = store.add(generation)
+    for item in generation.items:
+        store.record(gid, item.id, Decision.ACCEPT)
     store.record(gid, generation.items[1].id, Decision.REJECT, note="duplicate")
     p = profile(ids={"pattern": "WL-{n:02}"})
     export = prepare(generation, p, store.latest(gid))
     assert [r.id for r in export.rows] == ["WL-01", "WL-03", "WL-04", "WL-05"]
     assert export.left_out == {ReviewStatus.REJECTED: 1}
+
+
+def test_with_review_decisions_unreviewed_items_stay_out_unless_asked(tmp_path, generation):
+    store = ReviewStore(tmp_path / "review.sqlite")
+    gid = store.add(generation)
+    store.record(gid, generation.items[0].id, Decision.ACCEPT)
+    export = prepare(generation, profile(), store.latest(gid))
+    assert len(export.rows) == 1
+    assert export.left_out == {ReviewStatus.UNREVIEWED: len(generation.items) - 1}
+    everything = profile(output={"statuses": ["accepted", "edited", "unreviewed"]})
+    assert len(prepare(generation, everything, store.latest(gid)).rows) == len(generation.items)
+    assert len(prepare(generation, profile()).rows) == len(generation.items)  # no review log
 
 
 def test_review_edits_are_exported_and_statuses_filter(tmp_path, generation):
@@ -219,6 +233,7 @@ def hostile(generation):
             "pass_criterion": "+5 V at the terminal",
             "expected_result": "@SUM(A1)",
             "equipment": ["-2+3", "Bench\x07 supply"],
+            "setup": ["-1 cmd|' /C calc'!A0"],
         }
     )
     items = [
@@ -241,6 +256,8 @@ def test_csv_cells_never_run_as_formulas(hostile):
     assert "'-2+3" in run_exporter(
         prepare(hostile, profile(output={"columns": ["id", "equipment"]}))
     )
+    dde = read_csv(run_exporter(prepare(hostile, profile(output={"columns": ["id", "setup"]}))))
+    assert dde[0]["Setup"] == "'-1 cmd|' /C calc'!A0"  # the DDE payload shape
 
 
 def test_xlsx_is_one_sheet_of_text_cells(hostile):
@@ -315,6 +332,8 @@ def test_cli_export_from_the_review_log(tmp_path, generation, capsys):
     db = tmp_path / "review.sqlite"
     store = ReviewStore(db)
     gid = store.add(generation)
+    for item in generation.items:
+        store.record(gid, item.id, Decision.ACCEPT)
     store.record(gid, generation.items[0].id, Decision.REJECT)
     path = tmp_path / "generation.json"
     path.write_text(generation.model_dump_json(), encoding="utf-8")
@@ -327,6 +346,9 @@ def test_cli_export_from_the_review_log(tmp_path, generation, capsys):
     assert raw.startswith(b"\xef\xbb\xbf")  # UTF-8 byte-order mark, for spreadsheets
     assert b"\r\r\n" not in raw
     assert len(read_csv(raw.decode("utf-8-sig"))) == 4
+    assert cli.main(["export", str(path), "--db", str(db), "--out", str(out)]) == 2
+    assert f"{out} exists; pass --force" in capsys.readouterr().err
+    assert cli.main(["export", str(path), "--db", str(db), "--out", str(out), "--force"]) == 0
 
     assert cli.main(["export", "--db", str(db), "--generation", gid[:8], "--format", "yaml"]) == 0
     assert len(yaml.safe_load(capsys.readouterr().out)["items"]) == 4

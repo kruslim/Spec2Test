@@ -127,6 +127,12 @@ class EvalRun(_Record):
     created: str = Field(description="ISO 8601 time the run was scored.")
     seconds: float | None = Field(default=None, description="Wall time of the extraction.")
     pages: int = Field(description="Pages the scope covers.")
+    doc_sha256: str | None = Field(
+        default=None, description="sha256 of the ingested `Document.text` the run scored."
+    )
+    docling: str | None = Field(
+        default=None, description="The Docling version installed when the run was scored."
+    )
     scope: list[str] | None
     gold_labeler: str | None = None
     gold_reviewed: bool = False

@@ -27,10 +27,12 @@ from spec2test.judge.models import (
     JudgeFailure,
     Judgement,
     Judging,
+    graded_hash,
 )
 from spec2test.judge.pipeline import judge_item, judge_warnings
 from spec2test.judge.rubric import RUBRIC
 from spec2test.llm import LLMClient, LLMError, model_name
+from spec2test.textio import read_text
 
 
 def make_sample(
@@ -67,13 +69,36 @@ def make_sample(
     return out
 
 
-def write_sample(sample: Iterable[CalibrationItem], path: str | Path) -> None:
+class LabelsExistError(ValueError):
+    """The sample file to write already holds a person's labels."""
+
+
+def write_sample(
+    sample: Iterable[CalibrationItem], path: str | Path, *, force: bool = False
+) -> None:
+    """Write `sample` as JSONL. A file at `path` that holds any human label, or that cannot
+    be read as a sample, is never overwritten unless `force`: the labels are a person's
+    work and cannot be made again by a command."""
+    path = Path(path)
+    if path.exists() and not force:
+        try:
+            labeled = sum(s.human.started for s in load_sample(path))
+        except ValueError:
+            raise LabelsExistError(
+                f"{path} exists and is not a readable sample; it may hold labels. Move it "
+                "away, or pass --force to overwrite it"
+            ) from None
+        if labeled:
+            raise LabelsExistError(
+                f"{path} holds human labels on {labeled} line(s); writing a new sample would "
+                "destroy them. Write it elsewhere, or pass --force to overwrite it"
+            )
     lines = [s.model_dump_json() for s in sample]
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def load_sample(path: str | Path) -> list[CalibrationItem]:
-    text = Path(path).read_text(encoding="utf-8")
+    text = read_text(path)
     return [CalibrationItem.model_validate_json(line) for line in text.splitlines() if line.strip()]
 
 
@@ -103,6 +128,7 @@ def calibrate(
     start = 0 if llm is None else len(llm.usage)
 
     found = {} if saved is None else {j.item_id: j for j in saved.judgements}
+    unchecked = 0
     graded: list[tuple[CalibrationItem, Judgement]] = []
     for s in labeled:
         if llm is not None:
@@ -114,6 +140,17 @@ def calibrate(
         elif (j := found.get(s.item.id)) is None:
             judging.failed.append(JudgeFailure(item_id=s.item.id, error="no saved judgement"))
             continue
+        elif j.graded is None:
+            unchecked += 1
+        elif j.graded != graded_hash(s.requirement, s.item):
+            judging.failed.append(
+                JudgeFailure(
+                    item_id=s.item.id,
+                    error="the saved judgement graded a different text under this id (a "
+                    "regenerated item?); judge this sample again",
+                )
+            )
+            continue
         judging.judgements.append(j)
         graded.append((s, j))
 
@@ -121,6 +158,12 @@ def calibrate(
         judging.usage = llm.usage[start:]
     if judging.failed:
         warnings.append(f"{len(judging.failed)} labeled item(s) could not be judged")
+    if unchecked:
+        warnings.append(
+            f"{unchecked} saved judgement(s) carry no hash of the text they graded, so it "
+            "cannot be checked that they graded these items: judge the sample again"
+        )
+    warnings.extend(labeler_warnings(labeled))
     if not labeled:
         warnings.append("no line has a complete human label yet: fill in `human` first")
     elif len(graded) < 30:
@@ -164,6 +207,21 @@ def calibrate(
         disagreements=disagreements,
         judging=judging,
     )
+
+
+_MODEL_WORDS = ("claude", "opus", "sonnet", "haiku", "fable", "gemini", "kimi", "gpt", "llama")
+
+
+def labeler_warnings(sample: Iterable[CalibrationItem]) -> list[str]:
+    """Human labels come from a person; a labeler named like a model is worth a second look."""
+    names = sorted({s.human.labeler for s in sample if s.human.labeler})
+    models = [n for n in names if any(w in n.casefold() for w in _MODEL_WORDS)]
+    if not models:
+        return []
+    return [
+        f"labeler {', '.join(map(repr, models))} looks like a model ID: human labels must "
+        "come from a person, or the agreement measures one model against another"
+    ]
 
 
 def judge_sample(sample: list[CalibrationItem], llm: LLMClient) -> Judging:

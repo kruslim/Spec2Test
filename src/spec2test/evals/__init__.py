@@ -12,7 +12,7 @@ from spec2test.evals.models import (
 )
 from spec2test.evals.report import html_report, text_report
 from spec2test.evals.run import LintMode, evaluate, rescore, write_report
-from spec2test.evals.score import align, compare, score
+from spec2test.evals.score import align, compare, score, text_sha256
 from spec2test.llm import model_name
 
 __all__ = [
@@ -38,5 +38,6 @@ __all__ = [
     "rescore",
     "score",
     "text_report",
+    "text_sha256",
     "write_report",
 ]

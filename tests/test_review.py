@@ -10,6 +10,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from spec2test import cli
+from spec2test.llm import FakeLLM
 from spec2test.review import (
     APP,
     Decision,
@@ -297,3 +298,24 @@ def test_app_asks_before_a_paid_run(app, widget_lamp):
     run = next(b for b in at.sidebar.button if b.label == "Run the pipeline")
     assert run.disabled
     assert "paid API" in at.sidebar.checkbox[0].label
+
+
+def test_app_clears_the_paid_run_tick_after_a_run(app, widget_lamp, monkeypatch):
+    """A second paid run needs a second tick. The paid model is swapped for the fake."""
+    from spec2test.review import run
+
+    real = run.run_pipeline
+    fake = FakeLLM.from_dir(FIXTURES / "llm")
+    monkeypatch.setattr(run, "run_pipeline", lambda doc, llm, **kw: real(doc, fake, **kw))
+    at = app()
+    data = widget_lamp.model_dump_json().encode("utf-8")
+    at.sidebar.file_uploader[0].set_value(("widget-lamp.json", data, "application/json"))
+    at.run()
+    at.sidebar.checkbox[0].check().run()
+    run_button = next(b for b in at.sidebar.button if b.label == "Run the pipeline")
+    assert not run_button.disabled
+    run_button.click().run()
+    assert not at.exception
+    assert at.title[0].value == "Review: widget-lamp"
+    assert not at.sidebar.checkbox[0].value
+    assert next(b for b in at.sidebar.button if b.label == "Run the pipeline").disabled

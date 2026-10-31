@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -105,8 +106,13 @@ def cost(usage: Iterable[TokenUsage]) -> Cost:
     )
 
 
-def cost_line(usage: Iterable[TokenUsage], pages: int) -> str:
-    """'cost $0.42 ($0.0140 per page over 30 pages); 12 calls, 98,000 in / 7,100 out tokens'"""
+def cost_line(
+    usage: Iterable[TokenUsage], pages: int, basis: Literal["cited", "scope"] = "cited"
+) -> str:
+    """'cost $0.42 ($0.0140 per page over 30 cited pages); 12 calls, 98,000 in / 7,100 out
+    tokens'. `basis` names the pages: the source pages the requirements cite (extract,
+    lint, generate, judge) or the pages a gold set's scope covers (eval). The two differ,
+    so per-page costs on different bases do not add up."""
     c = cost(usage)
     tokens = f"{c.calls} calls, {c.input_tokens:,} in / {c.output_tokens:,} out tokens"
     if not c.calls:
@@ -114,5 +120,5 @@ def cost_line(usage: Iterable[TokenUsage], pages: int) -> str:
     if c.dollars is None:
         return f"cost unknown (no price for {', '.join(c.unpriced)}); {tokens}"
     per = c.per(pages)
-    per_page = "" if per is None else f" (${per:.4f} per page over {pages} pages)"
+    per_page = "" if per is None else f" (${per:.4f} per page over {pages} {basis} pages)"
     return f"cost ${c.dollars:.2f}{per_page}; {tokens}"

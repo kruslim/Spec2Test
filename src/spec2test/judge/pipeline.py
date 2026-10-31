@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from spec2test.generate import Generation, SourceContext, pages_cited, source_context
 from spec2test.ingest import Document
-from spec2test.judge.models import JudgeAnswer, JudgeFailure, Judgement, Judging
+from spec2test.judge.models import JudgeAnswer, JudgeFailure, Judgement, Judging, graded_hash
 from spec2test.judge.prompts import SYSTEM, judge_prompt
 from spec2test.llm import LLMClient, LLMError, model_family, model_name
 from spec2test.schema import Requirement, VerificationItem
@@ -57,6 +57,7 @@ def judge_item(
         kind=item.kind,
         verdicts=answer.verdicts(),
         acceptable=answer.acceptable,
+        graded=graded_hash(req, item),
     )
 
 

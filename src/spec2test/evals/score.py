@@ -13,10 +13,12 @@ extra, and every wrong field of an aligned pair is a field error; each gets a
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
+from importlib.metadata import PackageNotFoundError, version
 
 from spec2test.evals.gold import GoldSet, in_scope
 from spec2test.evals.models import (
@@ -97,7 +99,9 @@ def score(
     """Align `extraction` with `gold` inside the gold set's scope and compute the metrics.
 
     With `lint`, the extracted records are scored as linted, testability flags included;
-    without it they carry no flags, and flag precision and recall measure nothing.
+    without it they carry no flags, and flag precision and recall measure nothing. Flags
+    are scored on aligned pairs only, so they measure the linter apart from extraction
+    recall; a warning counts the gold flags on missed records, which go unscored.
     """
     if extraction.doc_id != doc.doc_id or gold.doc_id != doc.doc_id:
         raise ValueError(
@@ -186,10 +190,12 @@ def score(
         created=datetime.now(UTC).isoformat(timespec="seconds"),
         seconds=seconds,
         pages=len(scope_pages(doc, gold.scope)),
+        doc_sha256=text_sha256(doc),
+        docling=docling_version(),
         scope=gold.scope,
         gold_labeler=gold.labeler,
         gold_reviewed=gold.reviewed,
-        warnings=warnings(gold, model, lint, extraction),
+        warnings=warnings(gold, model, lint, extraction) + _unscored_flags(gold, matches),
         gold=gold.requirements,
         predicted=predicted,
         extraction=extraction,
@@ -199,6 +205,37 @@ def score(
         metrics=metrics,
         method_confusion=dict(confusion),
         flags=sorted(flags.values(), key=lambda c: c.kind),
+    )
+
+
+def text_sha256(doc: Document) -> str:
+    return hashlib.sha256(doc.text.encode("utf-8")).hexdigest()
+
+
+def docling_version() -> str | None:
+    try:
+        return version("docling")
+    except PackageNotFoundError:
+        return None
+
+
+def text_changed(previous: EvalRun, current: EvalRun) -> str | None:
+    """Why a rescore may compare against shifted text: gold anchors and the saved quotes
+    resolve against the document as ingested now, which a Docling upgrade can change."""
+    if previous.doc_sha256 is None:
+        return (
+            "the saved run did not record its document text's hash, so it cannot be checked "
+            "that the text is unchanged since; compare these scores with care"
+        )
+    if previous.doc_sha256 == current.doc_sha256:
+        return None
+    versions = ""
+    if previous.docling != current.docling:
+        versions = f" (Docling {previous.docling} then, {current.docling} now)"
+    return (
+        f"the document text differs from the one the saved run extracted from{versions}: "
+        "quotes and gold anchors may no longer line up, so these scores are not comparable "
+        "with the saved run's; run the extraction again"
     )
 
 
@@ -230,6 +267,18 @@ def warnings(
             f"the LLM lint pass failed for {len(lint.failed)} batch(es); flag recall is understated"
         )
     return out
+
+
+def _unscored_flags(gold: GoldSet, matches: list[Match]) -> list[str]:
+    aligned = {m.gold_id for m in matches}
+    missed = [g for g in gold.requirements if g.id not in aligned and g.testability_flags]
+    if not missed:
+        return []
+    flags = sum(len(g.testability_flags) for g in missed)
+    return [
+        f"{flags} gold flag(s) sit on {len(missed)} requirement(s) the extraction missed; flag "
+        "precision and recall count aligned pairs only, so those flags are not scored"
+    ]
 
 
 def align(gold: list[Requirement], predicted: list[Requirement]) -> list[Match]:

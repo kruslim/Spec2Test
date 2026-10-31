@@ -10,6 +10,18 @@ from spec2test.llm import FakeLLM
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Live tests spend API money, so they need `-m live` on the command line as well as
+    SPEC2TEST_LIVE=1: a variable left set in the shell never runs them on its own."""
+    if "live" in (config.option.markexpr or ""):
+        return
+    skip = pytest.mark.skip(reason="live test: run with SPEC2TEST_LIVE=1 uv run pytest -m live")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip)
+
+
 # Invented for the tests. The canned extraction answers are in
 # tests/fixtures/llm/extract_widget_lamp.json, its gold set in tests/fixtures/gold/.
 WIDGET_LAMP = [

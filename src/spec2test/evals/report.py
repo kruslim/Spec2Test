@@ -22,7 +22,7 @@ _METHODS = ["inspection", "test", "demonstration", "analysis"]
 def text_report(run: EvalRun) -> str:
     lines = [
         _headline(run),
-        cost_line(run.usage, run.pages),
+        cost_line(run.usage, run.pages, "scope"),
         *(f"warning: {w}" for w in run.warnings),
         "",
     ]
@@ -139,7 +139,7 @@ def _cost_rows(run: EvalRun) -> list[tuple[str, str]]:
         ("Model calls", str(c.calls)),
         ("Tokens", f"{c.input_tokens:,} in / {c.output_tokens:,} out"),
         ("Cost", dollars),
-        ("Cost per page", per_page),
+        ("Cost per scope page", per_page),
     ]
 
 

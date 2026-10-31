@@ -10,7 +10,7 @@ from spec2test import lint as linter
 from spec2test.evals.gold import GoldSet, in_scope
 from spec2test.evals.models import EvalRun
 from spec2test.evals.report import html_report
-from spec2test.evals.score import score
+from spec2test.evals.score import score, text_changed
 from spec2test.extract import Extraction, extract, is_normative
 from spec2test.ingest import Document
 from spec2test.lint import Lint
@@ -68,6 +68,7 @@ def rescore(
 
     The rules run again, so a rule change shows up too; "full" keeps the LLM flags the
     saved run has, if any. A saved run keeps its token counts, so its cost is still shown.
+    A warning says so when the document text differs from the one the run extracted from.
     """
     if isinstance(previous, EvalRun):
         model, seconds, extraction = previous.model, previous.seconds, previous.extraction
@@ -81,6 +82,8 @@ def rescore(
     run = score(gold, extraction, doc, corpus=corpus, model=model, seconds=seconds, lint=linted)
     if isinstance(previous, EvalRun):
         run.usage = previous.usage
+        if changed := text_changed(previous, run):
+            run.warnings.append(changed)
     return run
 
 

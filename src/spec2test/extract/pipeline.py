@@ -41,6 +41,7 @@ def extract(doc: Document, llm: LLMClient, *, sections: Iterable[int] | None = N
     section with normative wording is sent (see `is_normative`).
     """
     result = Extraction(doc_id=doc.doc_id)
+    start = len(llm.usage)
     wanted = None if sections is None else set(sections)
     ids = _Ids(doc.doc_id)
     for section in doc.sections:
@@ -50,6 +51,7 @@ def extract(doc: Document, llm: LLMClient, *, sections: Iterable[int] | None = N
             result.skipped_sections.append(section.index)
             continue
         _extract_section(doc, section, llm, ids, result)
+    result.usage = llm.usage[start:]
     return result
 
 

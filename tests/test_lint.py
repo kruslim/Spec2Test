@@ -301,9 +301,9 @@ def test_cli_lint_prints_flags_and_rewrites(widget_lamp, fake_llm, tmp_path, cap
     assert "    vague_term: 'operable with one hand' sets no force, reach or time limit.\n" in out
     assert "        rewrite: The switch shall be operable with one hand with a force" in out
     assert "rejected  widget-lamp:2.1:1  vague_term: 'dazzling glare' is not in" in out
-    assert out.rstrip().endswith(
-        "2 of 5 requirements flagged, 2 flags, 1 LLM flags rejected, 0 batches failed"
-    )
+    summary, cost = out.rstrip().splitlines()[-2:]
+    assert summary == "2 of 5 requirements flagged, 2 flags, 1 LLM flags rejected, 0 batches failed"
+    assert cost.startswith("cost unknown (no price for FakeLLM); 4 calls")
 
     assert cli.main(["lint", str(saved), "--rules-only", "--json"]) == 0
     result = Lint.model_validate_json(capsys.readouterr().out)

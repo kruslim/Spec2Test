@@ -40,10 +40,15 @@ def prepare(
     decisions: Mapping[str, ReviewDecision] | None = None,
 ) -> Export:
     """The rows `profile` exports from `generation`. `decisions` is the latest review
-    decision per item ID (`ReviewStore.latest`); without it every item is unreviewed."""
+    decision per item ID (`ReviewStore.latest`); without it every item is unreviewed.
+
+    With `decisions`, a profile that does not list its statuses exports only accepted and
+    edited items: unreviewed model output never goes out next to reviewed items unasked."""
     profile = profile or Profile()
-    decisions = decisions or {}
     wanted = set(profile.output.statuses)
+    if decisions is not None and "statuses" not in profile.output.model_fields_set:
+        wanted = {ReviewStatus.ACCEPTED, ReviewStatus.EDITED}
+    decisions = decisions or {}
     if not decisions and not wanted & {ReviewStatus.UNREVIEWED, ReviewStatus.REJECTED}:
         raise ExportError(
             f"profile {profile.name!r} exports only reviewed items, and no review decisions "
