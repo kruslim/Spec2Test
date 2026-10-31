@@ -10,9 +10,6 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from spec2test import cli
-from spec2test.extract import extract
-from spec2test.generate import generate
-from spec2test.lint import lint
 from spec2test.review import (
     APP,
     Decision,
@@ -27,12 +24,6 @@ from spec2test.review import (
 from spec2test.review.forms import form_fields, from_form, to_form
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-@pytest.fixture
-def generation(widget_lamp, fake_llm):
-    requirements = lint(extract(widget_lamp, fake_llm).requirements, fake_llm).requirements
-    return generate(requirements, fake_llm, doc=widget_lamp)
 
 
 @pytest.fixture

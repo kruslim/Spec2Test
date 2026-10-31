@@ -168,9 +168,9 @@ def test_title_and_intro_are_front_matter(ingested):
 
 
 def test_unsupported_format(tmp_path):
-    path = tmp_path / "notes.txt"
+    path = tmp_path / "notes.rtf"
     path.write_text("1.1 Text.", encoding="utf-8")
-    with pytest.raises(UnsupportedFormatError, match=r"\.txt"):
+    with pytest.raises(UnsupportedFormatError, match=r"\.rtf"):
         ingest(path)
 
 

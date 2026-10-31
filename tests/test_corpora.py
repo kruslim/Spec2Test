@@ -137,7 +137,7 @@ def test_cli_ingest(tmp_path, capsys):
 
 
 def test_cli_ingest_reports_bad_input(tmp_path, capsys):
-    assert main(["ingest", str(tmp_path / "notes.txt")]) == 2
+    assert main(["ingest", str(tmp_path / "notes.rtf")]) == 2
     assert "unsupported format" in capsys.readouterr().err
 
 

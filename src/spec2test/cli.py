@@ -14,9 +14,10 @@ from datetime import datetime
 from pathlib import Path
 
 from spec2test import corpora, evals
+from spec2test.export import EXPORTERS, Profile, load_profile, prepare, run_exporter
 from spec2test.extract import Extraction, extract
 from spec2test.generate import Generation, generate, render
-from spec2test.ingest import Document, UnsupportedFormatError, ingest
+from spec2test.ingest import ADAPTERS, Document, UnsupportedFormatError, ingest
 from spec2test.judge import (
     Judging,
     calibrate,
@@ -42,7 +43,7 @@ from spec2test.llm import (
     write_requests,
 )
 from spec2test.llm.session import DEFAULT_MODEL as SESSION_MODEL
-from spec2test.review import APP, DEFAULT_DB, ReviewStore, stats_report
+from spec2test.review import APP, DEFAULT_DB, ReviewStore, generation_id, stats_report
 from spec2test.schema import Requirement
 from spec2test.trace import diff, diff_report, matrix_csv, matrix_report, trace
 
@@ -65,6 +66,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("path", type=Path)
     p.add_argument("--doc-id", help="document ID (default: from the file name)")
     p.add_argument("--end-marker", help="drop everything from the block starting with this")
+    _add_adapter_arg(p)
     p.add_argument("--json", action="store_true", help="print the whole Document as JSON")
     p.set_defaults(run=_ingest)
 
@@ -72,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("path", type=Path, help="a spec, or a Document saved by `ingest --json`")
     p.add_argument("--doc-id", help="document ID (default: from the file name)")
     p.add_argument("--end-marker", help="drop everything from the block starting with this")
+    _add_adapter_arg(p)
     _add_llm_args(p)
     p.add_argument("--json", action="store_true", help="print the whole Extraction as JSON")
     p.set_defaults(run=_extract)
@@ -212,12 +215,32 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="print the whole ReviewStats as JSON")
     s.set_defaults(run=_review_stats)
 
+    p = commands.add_parser("export", help="write items in a customer profile's format")
+    p.add_argument(
+        "path", type=Path, nargs="?", help="a Generation (`generate --json`); or use --generation"
+    )
+    p.add_argument("--profile", type=Path, help="profile TOML (default: built-in, CSV)")
+    p.add_argument("--format", help="exporter to use instead of the profile's (see `plugins`)")
+    p.add_argument("--db", type=Path, help="review log: apply edits and leave out rejected items")
+    p.add_argument(
+        "--generation", metavar="ID", help="export a generation from --db (an id or its prefix)"
+    )
+    p.add_argument("--out", type=Path, help="file to write (default: print text formats)")
+    p.set_defaults(run=_export)
+
+    p = commands.add_parser("plugins", help="list the input adapters and exporters")
+    p.set_defaults(run=_plugins)
+
     p = commands.add_parser("corpora", help="manage the gold-set source documents")
     p.add_argument("action", choices=["status", "fetch", "parse"])
     p.add_argument("ids", nargs="*", metavar="ID", help="documents to act on (default: all)")
     p.add_argument("--dir", type=Path, default=corpora.DEFAULT_DIR, help="corpora folder")
     p.set_defaults(run=_corpora)
     return parser
+
+
+def _add_adapter_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--adapter", help="input adapter to read the file with (default: by its suffix)")
 
 
 def _add_llm_args(
@@ -292,16 +315,18 @@ def _load_requirements(path: Path) -> list[Requirement]:
     return Lint.model_validate(data).requirements
 
 
-def _load_document(path: Path, doc_id: str | None, end_marker: str | None) -> Document:
+def _load_document(
+    path: Path, doc_id: str | None, end_marker: str | None, adapter: str | None = None
+) -> Document:
     """A spec to ingest, or a Document saved by `ingest --json`."""
-    if path.suffix.lower() == ".json":
+    if path.suffix.lower() == ".json" and adapter is None:
         return Document.model_validate_json(path.read_text(encoding="utf-8"))
-    return ingest(path, doc_id, end_marker=end_marker)
+    return ingest(path, doc_id, end_marker=end_marker, adapter=adapter)
 
 
 def _ingest(args: argparse.Namespace) -> int:
     try:
-        doc = ingest(args.path, args.doc_id, end_marker=args.end_marker)
+        doc = ingest(args.path, args.doc_id, end_marker=args.end_marker, adapter=args.adapter)
     except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -317,7 +342,7 @@ def _ingest(args: argparse.Namespace) -> int:
 
 def _extract(args: argparse.Namespace) -> int:
     try:
-        doc = _load_document(args.path, args.doc_id, args.end_marker)
+        doc = _load_document(args.path, args.doc_id, args.end_marker, args.adapter)
     except (UnsupportedFormatError, FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -611,6 +636,83 @@ def _review_stats(args: argparse.Namespace) -> int:
         gid = ids[0]
     stats = store.stats(gid)
     print(stats.model_dump_json(indent=2) if args.json else stats_report(stats))
+    return 0
+
+
+def _export(args: argparse.Namespace) -> int:
+    try:
+        profile = load_profile(args.profile) if args.profile else Profile()
+        exporter = EXPORTERS.get(args.format or profile.output.format)
+        generation, decisions = _export_input(args)
+        export = prepare(generation, profile, decisions)
+        out = run_exporter(export, exporter.name)
+    except (FileNotFoundError, ValueError) as exc:
+        # ExportError, PluginError, ValidationError and TOMLDecodeError are ValueErrors too.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        if args.out is None:
+            if isinstance(out, bytes):
+                raise ValueError(f"{exporter.name} writes a binary file; pass --out")
+            print(out, end="")
+        elif isinstance(out, bytes):
+            args.out.write_bytes(out)
+        else:
+            encoding = getattr(exporter, "encoding", "utf-8")
+            args.out.write_text(out, encoding=encoding, newline="")
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    left = ", ".join(f"{n} {s.value}" for s, n in sorted(export.left_out.items()))
+    where = f" to {args.out}" if args.out else ""
+    print(
+        f"{len(export.rows)} items written{where} ({exporter.name}, profile {profile.name})"
+        + (f"; left out: {left}" if left else ""),
+        file=sys.stderr,
+    )
+    for column, ids in export.missing.items():
+        print(
+            f"required {column!r} is empty for {len(ids)} items, written as "
+            f"[{export.labels[column]}]: {', '.join(ids)}",
+            file=sys.stderr,
+        )
+    return 1 if export.missing else 0
+
+
+def _export_input(args: argparse.Namespace):
+    """The Generation to export and its latest review decisions (none without --db)."""
+    if (args.path is None) == (args.generation is None):
+        raise ValueError("give a Generation file or --generation, not both or neither")
+    if args.db is None:
+        if args.generation is not None:
+            raise ValueError("--generation needs --db")
+        return Generation.model_validate_json(args.path.read_text(encoding="utf-8")), None
+    if not args.db.is_file():
+        raise FileNotFoundError(f"no review log at {args.db}")
+    store = ReviewStore(args.db)
+    if args.path is not None:
+        generation = Generation.model_validate_json(args.path.read_text(encoding="utf-8"))
+        gid = generation_id(generation)
+        if gid not in {g.id for g in store.generations()}:
+            raise ValueError(
+                f"{args.path.name} is not in {args.db}; review it first "
+                f"(`spec2test review open {args.path}`), or leave out --db"
+            )
+        return generation, store.latest(gid)
+    ids = [g.id for g in store.generations() if g.id.startswith(args.generation)]
+    if len(ids) != 1:
+        found = "no generation" if not ids else f"{len(ids)} generations"
+        raise ValueError(f"{found} with id {args.generation!r} in {args.db}")
+    return store.generation(ids[0]), store.latest(ids[0])
+
+
+def _plugins(args: argparse.Namespace) -> int:
+    for title, registry in (("input adapters", ADAPTERS), ("exporters", EXPORTERS)):
+        print(f"{title}:")
+        for name, plugin in registry.all().items():
+            where = "built-in" if registry.is_builtin(name) else type(plugin).__module__
+            detail = " ".join(plugin.suffixes) if hasattr(plugin, "suffixes") else plugin.suffix
+            print(f"  {name:12} {detail:32} {where}")
     return 0
 
 

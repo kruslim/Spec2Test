@@ -188,6 +188,8 @@ Done when: a new input format or output template can be added as a plugin withou
 Add a plugin interface for input adapters and output exporters, and a per-customer Profile (ID scheme, output template, vocabulary, required fields). Ship built-in exporters: CSV, XLSX, Markdown checklist, YAML. Document how to write an adapter.
 ```
 
+Status (Oct 31, 2026): built. Input adapters and exporters are plugins found by entry point (`spec2test.adapters`, `spec2test.exporters`); the built-ins register the same way, and a plugin that fails to load or takes a used name is skipped with a warning instead of breaking the built-ins. Ingestion now goes through adapters: Docling (PDF, DOCX, XLSX, Markdown) and a new plain-text adapter (`.txt`). `spec2test export` writes a Generation, with its review edits applied and rejected items left out, through a profile (TOML: ID scheme, output format, columns and title, vocabulary for headers, kinds and statuses, required columns, fixed values); a required column with no value is written as `[Label]` and reported, never filled in. Built-in exporters: CSV, XLSX, Markdown checklist and a generic YAML layout; CSV and XLSX cells cannot run as formulas. A profile is checked as it loads (unknown columns, placeholders or terms, IDs that would collide). Shown done by the tests: an adapter for an invented `.lamp` format and a JSON Lines exporter, in `tests/plugin_demo.py`, are installed by entry point and used from the CLI with no change to `src/`. No model calls, so nothing measured; the example profile (`examples/profiles/widget-co.toml`) is for an invented customer.
+
 ### Phase 9 — Deploy
 
 Done when: design partners can log in, their data is isolated, and they can delete it.

@@ -1,0 +1,40 @@
+# An example customer profile, invented for this project: a lamp maker that wants a
+# Markdown checklist with its own IDs, words and owner column. See README.md, "Export".
+
+name = "widget-co"
+description = "Invented example customer: Markdown checklist, WL- IDs."
+
+# Every exported item must fill these columns; an empty one is written as [Label] and
+# reported. Values the source does not give are never invented.
+required = ["equipment", "owner"]
+
+[ids]
+# Placeholders: {item} {doc} {kind} {section} {req} {n} {n_kind}, with Python format specs.
+pattern = "{doc}-{kind}-{n:03}"
+doc = "WL"
+
+[ids.kind_codes]
+test_case = "TP"  # checklist and evidence keep CL and EV
+
+[output]
+format = "markdown"  # or csv, xlsx, yaml, or an exporter a plugin adds
+title = "Widget lamp verification checklist"
+columns = [
+    "id", "kind", "requirements", "section", "requirement",
+    "actions", "acceptance", "equipment", "owner", "program", "status",
+]
+statuses = ["accepted", "edited", "unreviewed"]  # rejected items stay out
+
+[vocabulary.columns]
+actions = "How to verify"
+acceptance = "Pass if"
+
+[vocabulary.kinds]
+test_case = "Test procedure"
+checklist = "Inspection"
+
+[vocabulary.statuses]
+unreviewed = "Draft"
+
+[values]
+program = "Widget lamp, revision A"
