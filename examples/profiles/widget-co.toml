@@ -1,5 +1,5 @@
 # An example customer profile, invented for this project: a lamp maker that wants a
-# Markdown checklist with its own IDs, words and owner column. See README.md, "Export".
+# Markdown checklist with its own IDs, words and owner column. See docs/USAGE.md, "Export".
 
 name = "widget-co"
 description = "Invented example customer: Markdown checklist, WL- IDs."

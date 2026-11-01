@@ -17,8 +17,8 @@ Check every added or changed file:
    `git check-ignore -v` on anything suspicious.
 2. **Employer data**: no employer specs, test cases, file formats, YAML layouts, code,
    internal names, part numbers or program codes, in code, fixtures, prompts, docs or
-   commit messages. Naming the employer in `docs/PLAN.md` planning text is fine; its
-   content is not.
+   commit messages. Do not name the employer anywhere in the repo either, docs
+   included.
 3. **Traceability**: each new fixture or gold line either quotes a public document listed
    in `corpora/manifest.toml` (FMVSS 111, NASA-STD-5001, ...) or is visibly invented
    (like the `widget_lamp` spec in `tests/conftest.py`). A quote must not come from a

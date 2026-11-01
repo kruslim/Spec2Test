@@ -3,7 +3,7 @@
 The core turns blocks into the `Document` (clause sections, page spans, offsets), so an
 adapter only has to say what text is on which page. Built in: Docling (PDF, DOCX, XLSX,
 Markdown) and plain text. More come from the `spec2test.adapters` entry point; see
-`spec2test.plugins` and the README's "Writing an adapter".
+`spec2test.plugins` and docs/USAGE.md, "Writing an adapter".
 """
 
 from __future__ import annotations

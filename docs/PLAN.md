@@ -46,7 +46,7 @@ flowchart LR
     class extract core
 ```
 
-Adapters at both ends are where each customer's formats live; the core in between never changes. That boundary is the FDE work, and it is what lets Ford plug in later without anything crossing the line.
+Adapters at both ends are where each customer's formats live; the core in between never changes. That boundary is the FDE work: a customer's own formats plug in without anything crossing the line.
 
 ## Model roles
 
@@ -235,24 +235,11 @@ Get the first outside user once phase 7 works. Don't wait for phase 9. Real usag
 
 Write one short case study per partner: their problem, what you adapted, and the numbers. Those case studies are your interview material.
 
-## Bringing it to Ford
-
-Keep the product and the Ford work fully separate, and let Ford adopt the core the way it adopts any open-source library. The adapter design in phase 8 is what makes this work: everything Ford-specific lives in Ford-owned adapters, never in your code.
-
-1. **Check first.** Before writing code, read your employment agreement's invention-assignment and outside-activity clauses, and get written approval for the side project if they call for it. This is the one step that can't be fixed later. (Not legal advice; ask HR or a lawyer if anything is unclear.)
-2. **Keep a firewall.** Your repo holds public documents only. No Ford specs, no DAT 2 / DAT 2.5 content, no team test cases or YAML formats, no Ford code. Build on your own time and equipment.
-3. **Open-source the core.** Release it under a permissive licence (for example Apache-2.0). Ford can then pull it through its normal open-source review. This also fits the product: free core, paid hosted version and integrations.
-4. **Build the Ford layer at Ford.** On Ford machines, with Ford's approved LLM endpoint, write the Ford adapters: DAT 2 / 2.5 input, your team's YAML output, Jira. That code belongs to Ford, and the core's provider-agnostic LLM interface is what lets it plug in.
-5. **Ford data stays inside Ford.** The Ford deployment runs in Ford's environment. Your hosted product never sees a Ford document.
-
-The payoff: Ford usage becomes a bullet under your Ford experience, and the separation itself is a good FDE interview answer about customer data boundaries.
-
 ## Resume framing
 
 Fill the brackets only with numbers you have measured.
 
 - **Projects:** Built and deployed Spec2Test, an AI platform that turns requirements documents into traceable test cases and inspection checklists; \[X\]% extraction recall and \[Y\]% field accuracy across four human-reviewed regulatory gold sets (automotive, aerospace, motorsport). Describe the labels as they were made, e.g. "model-labeled, every line reviewed by hand"; never "hand-labeled" for model labels.
 - **Projects:** Deployed to \[N\] engineering teams (Formula SAE, \[startup\]); \[Z\]% of generated items accepted without edits; flagged \[K\] untestable requirements before inspection.
-- **Ford (if adopted):** Integrated an open-source requirements-to-test pipeline into the surround-view camera validation workflow via custom adapters; cut test-planning time by \[T\]%.
 
 Role fit: FDE (customer adapters, discovery, deployment), Applied GenAI (agentic extraction, citation checks), Evals Engineer (gold sets, calibrated judge, failure taxonomy).
