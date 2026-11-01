@@ -35,8 +35,22 @@ placeholder; do not paper over it.
 _KIND_INSTRUCTIONS = {
     VerificationMethod.INSPECTION: """\
 Write a checklist item (verification method: inspection).
-- inspect: what to look at or which document to check, and where.
-- pass_condition: what has to be seen for a pass, naming every criterion value.""",
+- inspect: what to look at or which document to check, and where, and how to tell \
+whether the requirement is met (a straightedge, a gauge, a drawing, a data sheet).
+- pass_condition: what has to be seen for a pass, naming every criterion value.
+- The pass condition is the requirement's own criterion and nothing more. How the \
+inspector establishes it belongs in inspect: never make a marking, label, document or \
+appearance a pass condition unless the requirement itself requires it. If a lamp "shall \
+be red", a red lamp with no colour marking passes.
+- Some conditions or exceptions turn on what another clause's test measures ("each \
+vehicle whose X does not meet S4.2 shall ...", "except to the extent necessary to meet \
+S6"). An inspection cannot measure that by eye: take that clause's verification result \
+(its test report, or the analysis that shows it) as an input, name it in inspect, and say \
+in the pass condition how each outcome decides the verdict. Do not repeat the other \
+clause's procedure or limits here.
+- Never leave a judgment to the inspector ("only to the extent necessary", "adequate"): \
+name the document or result that decides it, or write the decision that is missing as a \
+[bracketed placeholder].""",
     VerificationMethod.TEST: """\
 Write a test case (verification method: test).
 - preconditions: the state the item under test must be in before the test.
