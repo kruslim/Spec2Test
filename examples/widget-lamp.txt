@@ -1,0 +1,23 @@
+Widget Lamp Specification
+
+This specification is invented for the Spec2Test extraction tests.
+
+1. SCOPE
+
+1.1 Purpose. This document specifies requirements for a widget lamp.
+
+2. REQUIREMENTS
+
+2.1 Brightness. The lamp shall emit at least 400 lm within 2.0 s of switch-on.
+
+2.2 Housing. The housing shall be red and shall carry a voltage label.
+
+2.3 Switch. The switch shall be operable with one hand.
+
+2.4 Battery. The battery should last 8 h at full brightness.
+
+2.5 Mounting. The lamp shall mount on either:
+
+a. a 35 mm rail; or
+
+b. a wall bracket.

@@ -2,8 +2,9 @@
 
 Turns a requirements document into verification items. Pipeline:
 ingest → extract → lint → generate → judge, scored by the eval harness. Every stage
-works on one canonical record, `spec2test.schema.Requirement`. `README.md` explains each
-stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase.
+works on one canonical record, `spec2test.schema.Requirement`. `docs/USAGE.md` explains each
+stage and its CLI; `docs/DESIGN.md` explains why it is built this way; `docs/PLAN.md` is the
+build plan and the status of each phase. `README.md` is the short front page.
 
 ## Data firewall (non-negotiable)
 
@@ -54,8 +55,9 @@ stage and its CLI; `docs/PLAN.md` is the build plan and the status of each phase
 - Ruff, line length 100. A hook formats each edited Python file.
 - Commit messages: `Phase N: <summary>` (or a plain summary outside a phase), then a
   bullet list of what changed and any measured numbers.
-- When a stage's behaviour or CLI changes, update its section in `README.md`; when a
-  phase lands, update its status paragraph in `docs/PLAN.md`.
+- When a stage's behaviour or CLI changes, update its section in `docs/USAGE.md` (and the
+  README's command list if it changes); when a phase lands, update its status paragraph in
+  `docs/PLAN.md`, and any measured numbers quoted in `README.md` and `docs/DESIGN.md`.
 
 ## Environment
 

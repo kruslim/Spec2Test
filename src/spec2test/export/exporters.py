@@ -1,7 +1,7 @@
 """Exporters: each one writes an `Export` in one output format.
 
 Built in: CSV, XLSX, a Markdown checklist and YAML. More come from the
-`spec2test.exporters` entry point; see `spec2test.plugins` and the README's "Writing an
+`spec2test.exporters` entry point; see `spec2test.plugins` and docs/USAGE.md, "Writing an
 exporter".
 """
 
